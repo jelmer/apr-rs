@@ -1,0 +1,23 @@
+[package]
+name = "apr"
+version = "0.0.2"
+edition = "2021"
+authors = ["Jelmer Vernooĳ <jelmer@apache.org>"]
+repository = "https://github.com/jelmer/apr-rs.git"
+homepage = "https://github.com/jelmer/apr-rs"
+license = "Apache-2.0"
+description = "Rust bindings for Apache Portable Runtime"
+
+[lib]
+doctest = false
+
+[dependencies]
+ctor = "0.2.5"
+
+[build-dependencies]
+bindgen = "0.68"
+pkg-config = "0.3"
+system-deps = "6.2"
+
+[package.metadata.system-deps]
+apr-1 = "*"
