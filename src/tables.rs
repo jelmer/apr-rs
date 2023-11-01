@@ -1,8 +1,12 @@
 pub use crate::generated::{apr_array_header_t, apr_table_t};
 
-pub struct ArrayHeader(*mut apr_array_header_t);
+pub struct ArrayHeader<'pool, T: Sized>(
+    *mut apr_array_header_t,
+    std::marker::PhantomData<&'pool ()>,
+    std::marker::PhantomData<T>,
+);
 
-impl ArrayHeader {
+impl<'pool, T: Sized> ArrayHeader<'pool, T> {
     pub fn is_empty(&self) -> bool {
         unsafe { crate::generated::apr_is_empty_array(self.0) != 0 }
     }
@@ -15,20 +19,24 @@ impl ArrayHeader {
         unsafe { (*self.0).nalloc as usize }
     }
 
-    pub fn make(pool: &mut crate::Pool, nelts: i32, elt_size: i32) -> Self {
+    pub fn new(pool: &'pool mut crate::Pool, nelts: usize) -> Self {
         unsafe {
-            Self(crate::generated::apr_array_make(
-                pool.into(),
-                nelts,
-                elt_size,
-            ))
+            Self(
+                crate::generated::apr_array_make(
+                    pool.into(),
+                    nelts as i32,
+                    std::mem::size_of::<T>() as i32,
+                ),
+                std::marker::PhantomData,
+                std::marker::PhantomData,
+            )
         }
     }
 
-    pub fn nth(&self, index: usize) -> *mut std::ffi::c_void {
+    pub fn nth(&self, index: usize) -> T {
         unsafe {
             let ptr = (*self.0).elts as *mut *mut std::ffi::c_void;
-            *ptr.add(index)
+            std::mem::transmute_copy(&*ptr.add(index))
         }
     }
 
@@ -36,11 +44,11 @@ impl ArrayHeader {
         unsafe { (*self.0).elt_size as usize }
     }
 
-    pub fn push(&mut self, item: *mut std::ffi::c_void) {
+    pub fn push(&mut self, item: T) {
         unsafe {
-            crate::generated::apr_array_push(self.0);
-            let ptr = (*self.0).elts as *mut *mut std::ffi::c_void;
-            *ptr.add((*self.0).nelts as usize - 1) = item;
+            let ptr = crate::generated::apr_array_push(self.0);
+            // copy item to the memory at ptr
+            std::ptr::copy_nonoverlapping(&item, ptr as *mut T, 1);
         }
     }
 
@@ -50,62 +58,72 @@ impl ArrayHeader {
         }
     }
 
-    pub fn cat(&mut self, other: &ArrayHeader) {
+    pub fn cat(&mut self, other: &ArrayHeader<T>) {
         unsafe {
             crate::generated::apr_array_cat(self.0, other.0);
         }
     }
 
-    pub fn append(pool: &mut crate::Pool, first: &ArrayHeader, second: &ArrayHeader) -> Self {
+    pub fn append(
+        pool: &'pool mut crate::Pool,
+        first: &ArrayHeader<T>,
+        second: &ArrayHeader<T>,
+    ) -> Self {
         unsafe {
-            Self(crate::generated::apr_array_append(
-                pool.into(),
-                first.0,
-                second.0,
-            ))
+            Self(
+                crate::generated::apr_array_append(pool.into(), first.0, second.0),
+                std::marker::PhantomData,
+                std::marker::PhantomData,
+            )
         }
     }
 
     pub fn copy(&self, pool: &mut crate::Pool) -> Self {
-        unsafe { Self(crate::generated::apr_array_copy(pool.into(), self.0)) }
+        unsafe {
+            Self(
+                crate::generated::apr_array_copy(pool.into(), self.0),
+                std::marker::PhantomData,
+                std::marker::PhantomData,
+            )
+        }
     }
 
-    pub fn iter(&self) -> ArrayHeaderIterator {
+    pub fn iter(&self) -> ArrayHeaderIterator<T> {
         ArrayHeaderIterator::new(self)
     }
 }
 
-impl From<ArrayHeader> for *mut apr_array_header_t {
-    fn from(array: ArrayHeader) -> Self {
+impl<'pool, T: Sized> From<ArrayHeader<'pool, T>> for *mut apr_array_header_t {
+    fn from(array: ArrayHeader<T>) -> Self {
         array.0
     }
 }
 
-impl From<ArrayHeader> for *const apr_array_header_t {
-    fn from(array: ArrayHeader) -> Self {
+impl<'pool, T: Sized> From<ArrayHeader<'pool, T>> for *const apr_array_header_t {
+    fn from(array: ArrayHeader<T>) -> Self {
         array.0
     }
 }
 
-impl From<*mut apr_array_header_t> for ArrayHeader {
+impl<'pool, T: Sized> From<*mut apr_array_header_t> for ArrayHeader<'pool, T> {
     fn from(array: *mut apr_array_header_t) -> Self {
-        Self(array)
+        Self(array, std::marker::PhantomData, std::marker::PhantomData)
     }
 }
 
-pub struct ArrayHeaderIterator<'a> {
-    array: &'a ArrayHeader,
+pub struct ArrayHeaderIterator<'pool, T: Sized> {
+    array: &'pool ArrayHeader<'pool, T>,
     index: usize,
 }
 
-impl<'a> ArrayHeaderIterator<'a> {
-    pub fn new(array: &'a ArrayHeader) -> Self {
+impl<'a, T: Sized> ArrayHeaderIterator<'a, T> {
+    pub fn new(array: &'a ArrayHeader<T>) -> Self {
         Self { array, index: 0 }
     }
 }
 
-impl<'a> Iterator for ArrayHeaderIterator<'a> {
-    type Item = *mut std::ffi::c_void;
+impl<'a, T: Sized> Iterator for ArrayHeaderIterator<'a, T> {
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.array.len() {
@@ -218,5 +236,17 @@ impl Table {
                 base.0,
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_array_header() {
+        let mut pool = crate::Pool::new();
+        let mut array = super::ArrayHeader::new(&mut pool, 3);
+        array.push(std::ffi::CString::new("test1").unwrap().as_ptr());
+        array.push(std::ffi::CString::new("test2").unwrap().as_ptr());
+        array.push(std::ffi::CString::new("test3").unwrap().as_ptr());
     }
 }
