@@ -73,6 +73,7 @@ impl Uri {
     pub fn parse_hostinfo(pool: &mut crate::Pool, hostinfo: &str) -> Result<Self, crate::Status> {
         let mut uri = pool.alloc::<apr_uri_t>();
         unsafe {
+            let hostinfo = std::ffi::CStr::from_ptr(hostinfo.as_ptr() as *const i8);
             let status = crate::generated::apr_uri_parse_hostinfo(
                 pool.into(),
                 hostinfo.as_ptr() as *const i8,
@@ -90,6 +91,7 @@ impl Uri {
     pub fn parse(pool: &mut crate::Pool, url: &str) -> Result<Self, crate::Status> {
         let mut uri = pool.alloc::<apr_uri_t>();
         unsafe {
+            let url = std::ffi::CStr::from_ptr(url.as_ptr() as *const i8);
             let status = crate::generated::apr_uri_parse(
                 pool.into(),
                 url.as_ptr() as *const i8,
@@ -105,6 +107,7 @@ impl Uri {
     }
 }
 
+/// Return the default port for a given scheme.
 pub fn port_of_scheme(scheme: &str) -> u16 {
     let scheme = std::ffi::CString::new(scheme).unwrap();
     unsafe { crate::generated::apr_uri_port_of_scheme(scheme.as_ptr() as *const i8) }
