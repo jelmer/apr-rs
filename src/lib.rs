@@ -5,10 +5,12 @@
 
 mod generated;
 
+pub mod date;
 pub mod file;
 pub mod hash;
 pub mod pool;
 pub mod tables;
+pub mod time;
 pub mod uri;
 
 pub use pool::Pool;

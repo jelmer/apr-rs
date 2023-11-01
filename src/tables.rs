@@ -248,5 +248,7 @@ mod tests {
         array.push(std::ffi::CString::new("test1").unwrap().as_ptr());
         array.push(std::ffi::CString::new("test2").unwrap().as_ptr());
         array.push(std::ffi::CString::new("test3").unwrap().as_ptr());
+
+        assert_eq!(array.len(), 3);
     }
 }
