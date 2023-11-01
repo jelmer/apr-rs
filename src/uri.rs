@@ -1,11 +1,17 @@
 pub use crate::generated::apr_uri_t;
 use std::ffi::CStr;
 
-pub struct Uri(*mut apr_uri_t);
+pub struct Uri<'pool>(*mut apr_uri_t, std::marker::PhantomData<&'pool ()>);
 
-impl Uri {
-    pub fn scheme(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).scheme).to_str().unwrap() }
+impl<'pool> Uri<'pool> {
+    pub fn scheme(&self) -> Option<&str> {
+        unsafe {
+            if (*self.0).scheme.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr((*self.0).scheme).to_str().unwrap())
+            }
+        }
     }
 
     pub fn hostinfo(&self) -> &str {
@@ -70,9 +76,13 @@ impl Uri {
         .to_string()
     }
 
-    pub fn parse_hostinfo(pool: &mut crate::Pool, hostinfo: &str) -> Result<Self, crate::Status> {
+    pub fn parse_hostinfo(
+        pool: &'pool mut crate::Pool,
+        hostinfo: &str,
+    ) -> Result<Self, crate::Status> {
         let mut uri = pool.alloc::<apr_uri_t>();
         unsafe {
+            let hostinfo = std::ffi::CStr::from_ptr(hostinfo.as_ptr() as *const i8);
             let status = crate::generated::apr_uri_parse_hostinfo(
                 pool.into(),
                 hostinfo.as_ptr() as *const i8,
@@ -80,16 +90,17 @@ impl Uri {
             );
             let status = crate::Status::from(status);
             if status.is_success() {
-                Ok(Uri(uri as *mut _))
+                Ok(Uri(uri as *mut _, std::marker::PhantomData))
             } else {
                 Err(status)
             }
         }
     }
 
-    pub fn parse(pool: &mut crate::Pool, url: &str) -> Result<Self, crate::Status> {
+    pub fn parse(pool: &'pool mut crate::Pool, url: &str) -> Result<Self, crate::Status> {
         let mut uri = pool.alloc::<apr_uri_t>();
         unsafe {
+            let url = std::ffi::CStr::from_ptr(url.as_ptr() as *const i8);
             let status = crate::generated::apr_uri_parse(
                 pool.into(),
                 url.as_ptr() as *const i8,
@@ -97,7 +108,7 @@ impl Uri {
             );
             let status = crate::Status::from(status);
             if status.is_success() {
-                Ok(Uri(uri as *mut _))
+                Ok(Uri(uri as *mut _, std::marker::PhantomData))
             } else {
                 Err(status)
             }
@@ -105,6 +116,7 @@ impl Uri {
     }
 }
 
+/// Return the default port for a given scheme.
 pub fn port_of_scheme(scheme: &str) -> u16 {
     let scheme = std::ffi::CString::new(scheme).unwrap();
     unsafe { crate::generated::apr_uri_port_of_scheme(scheme.as_ptr() as *const i8) }
