@@ -21,3 +21,4 @@ system-deps = "6.2"
 
 [package.metadata.system-deps]
 apr-1 = "*"
+"apr-util-1" = "*"
