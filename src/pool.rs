@@ -51,7 +51,14 @@ impl Pool {
         }
     }
 
-    pub fn clear(&mut self) {
+    /// Clear all memory in the pool.
+    ///
+    /// This does not actually free the memory, it just allows the pool to reuse this memory for the next allocation.
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe because it is possible to create a dangling pointer to memory that has been cleared.
+    pub unsafe fn clear(&mut self) {
         unsafe {
             generated::apr_pool_clear(self.0);
         }
@@ -65,6 +72,12 @@ impl Pool {
 
 impl From<&mut Pool> for *mut generated::apr_pool_t {
     fn from(p: &mut Pool) -> Self {
+        p.0
+    }
+}
+
+impl From<&Pool> for *mut generated::apr_pool_t {
+    fn from(p: &Pool) -> Self {
         p.0
     }
 }
@@ -122,7 +135,7 @@ mod tests {
     #[test]
     fn test_pool() {
         let mut pool = Pool::new();
-        let mut subpool = pool.subpool();
+        let subpool = pool.subpool();
         assert!(pool.is_ancestor(&subpool));
         assert!(!subpool.is_ancestor(&pool));
         assert!(subpool.parent().is_ancestor(&subpool));

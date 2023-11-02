@@ -17,6 +17,7 @@ pub use pool::Pool;
 
 pub use generated::apr_byte_t;
 pub use generated::apr_file_t;
+pub use generated::apr_getopt_option_t;
 pub use generated::apr_getopt_t;
 pub use generated::apr_int16_t;
 pub use generated::apr_int32_t;

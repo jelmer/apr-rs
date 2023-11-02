@@ -10,19 +10,25 @@ impl Time {
     }
 
     pub fn ctime(&self) -> String {
-        let mut buf = [0; crate::generated::APR_CTIME_LEN as usize];
+        let mut buf: [u8; crate::generated::APR_CTIME_LEN as usize] =
+            [0; crate::generated::APR_CTIME_LEN as usize];
         unsafe {
-            crate::generated::apr_ctime(buf.as_mut_ptr(), self.0);
-            String::from_raw_parts(buf.as_mut_ptr() as *mut u8, buf.len(), buf.len())
+            crate::generated::apr_ctime(buf.as_mut_ptr() as *mut i8, self.0);
         }
+        String::from_utf8_lossy(&buf[..])
+            .trim_end_matches('\0')
+            .to_string()
     }
 
     pub fn rfc822_date(&self) -> String {
-        let mut buf = [0; crate::generated::APR_RFC822_DATE_LEN as usize];
+        let mut buf: [u8; crate::generated::APR_RFC822_DATE_LEN as usize] =
+            [0; crate::generated::APR_RFC822_DATE_LEN as usize];
         unsafe {
-            crate::generated::apr_rfc822_date(buf.as_mut_ptr(), self.0);
+            crate::generated::apr_rfc822_date(buf.as_mut_ptr() as *mut i8, self.0);
         }
-        unsafe { String::from_raw_parts(buf.as_mut_ptr() as *mut u8, buf.len(), buf.len()) }
+        String::from_utf8_lossy(&buf[..])
+            .trim_end_matches('\0')
+            .to_string()
     }
 }
 
@@ -51,7 +57,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_time() {
-        let time = Time::now();
+    fn test_time_now() {
+        Time::now();
+    }
+
+    #[test]
+    fn test_ctime() {
+        let t = Time::from(784111777000000);
+        assert_eq!(t.ctime(), "Sun Nov 06 08:49:37 1994");
+    }
+
+    #[test]
+    fn test_rfc822_date() {
+        let t = Time::from(784111777000000);
+        assert_eq!(t.rfc822_date(), "Sun, 06 Nov 1994 08:49:37 GMT");
     }
 }

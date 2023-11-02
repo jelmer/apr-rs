@@ -99,8 +99,20 @@ impl<'pool, T: Sized> From<ArrayHeader<'pool, T>> for *mut apr_array_header_t {
     }
 }
 
+impl<'pool, T: Sized> From<&ArrayHeader<'pool, T>> for *mut apr_array_header_t {
+    fn from(array: &ArrayHeader<T>) -> Self {
+        array.0
+    }
+}
+
 impl<'pool, T: Sized> From<ArrayHeader<'pool, T>> for *const apr_array_header_t {
     fn from(array: ArrayHeader<T>) -> Self {
+        array.0
+    }
+}
+
+impl<'pool, T: Sized> From<&ArrayHeader<'pool, T>> for *const apr_array_header_t {
+    fn from(array: &ArrayHeader<T>) -> Self {
         array.0
     }
 }

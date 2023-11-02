@@ -172,6 +172,12 @@ impl<'pool, K: IntoHashKey<'pool>, V> From<Hash<'pool, K, V>> for *const apr_has
     }
 }
 
+impl<'pool, K: IntoHashKey<'pool>, V> From<&Hash<'pool, K, V>> for *const apr_hash_t {
+    fn from(hash: &Hash<'pool, K, V>) -> Self {
+        hash.hash
+    }
+}
+
 pub fn hash_default(key: &[u8]) -> u32 {
     unsafe {
         let mut len = key.len() as crate::generated::apr_ssize_t;
