@@ -53,6 +53,21 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         }
     }
 
+    /// Create an ArrayHeader from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pointer is valid and that the memory is owned by the pool.
+    pub unsafe fn from_raw_parts(
+        pool: &std::rc::Rc<crate::Pool>,
+        raw: *mut apr_array_header_t,
+    ) -> Self {
+        Self(
+            crate::pool::PooledPtr::in_pool(pool.clone(), raw),
+            std::marker::PhantomData,
+        )
+    }
+
     pub fn nth(&self, index: usize) -> Option<T> {
         if index < self.len() {
             Some(unsafe { *self.nth_unchecked(index) })
