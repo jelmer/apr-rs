@@ -13,6 +13,10 @@ doctest = false
 
 [dependencies]
 ctor = "0.2.5"
+url = { version = "2.4.1", optional = true }
+
+[features]
+url = ["dep:url"]
 
 [build-dependencies]
 bindgen = "0.68"

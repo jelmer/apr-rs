@@ -128,6 +128,7 @@ impl<'pool> Uri<'pool> {
     pub fn parse_hostinfo(hostinfo: &str) -> Result<Self, crate::Status> {
         Ok(Self(PooledPtr::initialize(|pool| unsafe {
             let uri = pool.calloc::<apr_uri_t>();
+            let hostinfo = std::ffi::CString::new(hostinfo).unwrap();
             let status = crate::generated::apr_uri_parse_hostinfo(
                 pool.into(),
                 hostinfo.as_ptr() as *const i8,
@@ -158,6 +159,14 @@ impl<'pool> Uri<'pool> {
                 Err(status)
             }
         })?))
+    }
+}
+
+impl std::str::FromStr for Uri<'_> {
+    type Err = crate::Status;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
     }
 }
 
@@ -206,5 +215,23 @@ mod tests {
         assert!(uri.is_initialized());
         assert!(!uri.dns_looked_up());
         assert!(!uri.dns_resolved());
+    }
+}
+
+// TODO(jelmer): Rather than serializing/deserializing, we should be able to just copy the fields
+// over.
+#[cfg(feature = "url")]
+impl From<url::Url> for Uri<'_> {
+    fn from(url: url::Url) -> Self {
+        let s = url.as_str();
+        Self::parse(s).unwrap()
+    }
+}
+
+#[cfg(feature = "url")]
+impl From<Uri<'_>> for url::Url {
+    fn from(uri: Uri<'_>) -> Self {
+        let s = uri.unparse(0);
+        url::Url::parse(&s).unwrap()
     }
 }
