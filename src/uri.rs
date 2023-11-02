@@ -127,7 +127,7 @@ impl<'pool> Uri<'pool> {
 
     pub fn parse_hostinfo(hostinfo: &str) -> Result<Self, crate::Status> {
         Ok(Self(PooledPtr::initialize(|pool| unsafe {
-            let uri = pool.alloc::<apr_uri_t>();
+            let uri = pool.calloc::<apr_uri_t>();
             let status = crate::generated::apr_uri_parse_hostinfo(
                 pool.into(),
                 hostinfo.as_ptr() as *const i8,
@@ -135,7 +135,7 @@ impl<'pool> Uri<'pool> {
             );
             let status = crate::Status::from(status);
             if status.is_success() {
-                Ok(&mut uri.as_mut().unwrap().assume_init())
+                Ok(uri)
             } else {
                 Err(status)
             }
@@ -144,7 +144,7 @@ impl<'pool> Uri<'pool> {
 
     pub fn parse(url: &str) -> Result<Self, crate::Status> {
         Ok(Self(PooledPtr::initialize(|pool| unsafe {
-            let uri = pool.alloc::<apr_uri_t>();
+            let uri = pool.calloc::<apr_uri_t>();
             let url = std::ffi::CString::new(url).unwrap();
             let status = crate::generated::apr_uri_parse(
                 pool.into(),
@@ -153,7 +153,7 @@ impl<'pool> Uri<'pool> {
             );
             let status = crate::Status::from(status);
             if status.is_success() {
-                Ok(&mut uri.as_mut().unwrap().assume_init())
+                Ok(uri)
             } else {
                 Err(status)
             }

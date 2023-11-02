@@ -10,6 +10,7 @@ impl From<Pool> for *mut generated::apr_pool_t {
 }
 
 impl Pool {
+    /// Create a new pool.
     pub fn new() -> Self {
         let mut pool: *mut generated::apr_pool_t = std::ptr::null_mut();
         unsafe {
@@ -23,6 +24,7 @@ impl Pool {
         Pool(pool)
     }
 
+    /// Create a subpool.
     pub fn subpool(&mut self) -> Self {
         let mut subpool: *mut generated::apr_pool_t = std::ptr::null_mut();
         unsafe {
@@ -36,15 +38,27 @@ impl Pool {
         Pool(subpool)
     }
 
+    /// Allocate memory in the pool.
     pub fn alloc<T: Sized>(&mut self) -> *mut std::mem::MaybeUninit<T> {
         let size = std::mem::size_of::<T>();
         unsafe { generated::apr_palloc(self.0, size) as *mut std::mem::MaybeUninit<T> }
     }
 
+    /// Allocate memory in the pool, and initialize it to zero.
+    pub fn calloc<T: Sized>(&mut self) -> *mut T {
+        let data = self.alloc::<T>();
+        unsafe {
+            std::ptr::write_bytes(data as *mut u8, 0, std::mem::size_of::<T>());
+        }
+        data as *mut T
+    }
+
+    /// Check if the pool is an ancestor of another pool.
     pub fn is_ancestor(&self, other: &Pool) -> bool {
         unsafe { generated::apr_pool_is_ancestor(self.0, other.0) != 0 }
     }
 
+    /// Set a tag for the pool.
     pub fn tag(&self, tag: &str) {
         unsafe {
             generated::apr_pool_tag(self.0, tag.as_ptr() as *const i8);
@@ -64,6 +78,7 @@ impl Pool {
         }
     }
 
+    /// Get the parent pool, if any.
     pub fn parent(&self) -> Self {
         let parent = unsafe { generated::apr_pool_parent_get(self.0) };
         Pool(parent)
