@@ -1,65 +1,114 @@
 pub use crate::generated::apr_uri_t;
+use crate::pool::PooledPtr;
 use std::ffi::CStr;
 
-pub struct Uri<'pool>(*mut apr_uri_t, std::marker::PhantomData<&'pool ()>);
+pub struct Uri<'pool>(PooledPtr<'pool, apr_uri_t>);
 
 impl<'pool> Uri<'pool> {
     pub fn scheme(&self) -> Option<&str> {
         unsafe {
-            if (*self.0).scheme.is_null() {
+            if self.0.scheme.is_null() {
                 None
             } else {
-                Some(CStr::from_ptr((*self.0).scheme).to_str().unwrap())
+                Some(CStr::from_ptr(self.0.scheme).to_str().unwrap())
             }
         }
     }
 
-    pub fn hostinfo(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).hostinfo).to_str().unwrap() }
+    pub fn hostinfo(&self) -> Option<&str> {
+        unsafe {
+            if self.0.hostinfo.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.hostinfo).to_str().unwrap())
+            }
+        }
     }
 
-    pub fn user(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).user).to_str().unwrap() }
+    pub fn user(&self) -> Option<&str> {
+        unsafe {
+            if self.0.user.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.user).to_str().unwrap())
+            }
+        }
     }
 
-    pub fn password(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).password).to_str().unwrap() }
+    pub fn password(&self) -> Option<&str> {
+        unsafe {
+            if self.0.password.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.password).to_str().unwrap())
+            }
+        }
     }
 
-    pub fn hostname(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).hostname).to_str().unwrap() }
+    pub fn hostname(&self) -> Option<&str> {
+        unsafe {
+            if self.0.hostname.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.hostname).to_str().unwrap())
+            }
+        }
     }
 
     pub fn port(&self) -> u16 {
-        unsafe { (*self.0).port }
+        self.0.port
     }
 
-    pub fn path(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).path).to_str().unwrap() }
+    pub fn path(&self) -> Option<&str> {
+        unsafe {
+            if self.0.path.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.path).to_str().unwrap())
+            }
+        }
     }
 
-    pub fn query(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).query).to_str().unwrap() }
+    pub fn query(&self) -> Option<&str> {
+        unsafe {
+            if self.0.query.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.query).to_str().unwrap())
+            }
+        }
     }
 
-    pub fn fragment(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).fragment).to_str().unwrap() }
+    pub fn fragment(&self) -> Option<&str> {
+        unsafe {
+            if self.0.fragment.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.fragment).to_str().unwrap())
+            }
+        }
     }
 
-    pub fn port_str(&self) -> &str {
-        unsafe { CStr::from_ptr((*self.0).port_str).to_str().unwrap() }
+    pub fn port_str(&self) -> Option<&str> {
+        unsafe {
+            if self.0.port_str.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(self.0.port_str).to_str().unwrap())
+            }
+        }
     }
 
     pub fn is_initialized(&self) -> bool {
-        unsafe { (*self.0).is_initialized() != 0 }
+        self.0.is_initialized() != 0
     }
 
     pub fn dns_looked_up(&self) -> bool {
-        unsafe { (*self.0).dns_looked_up() != 0 }
+        self.0.dns_looked_up() != 0
     }
 
     pub fn dns_resolved(&self) -> bool {
-        unsafe { (*self.0).dns_resolved() != 0 }
+        self.0.dns_resolved() != 0
     }
 
     pub fn unparse(&self, flags: u32) -> String {
@@ -67,7 +116,7 @@ impl<'pool> Uri<'pool> {
         unsafe {
             CStr::from_ptr(crate::generated::apr_uri_unparse(
                 (&mut pool).into(),
-                self.0,
+                &*self.0,
                 flags,
             ))
             .to_str()
@@ -76,43 +125,39 @@ impl<'pool> Uri<'pool> {
         .to_string()
     }
 
-    pub fn parse_hostinfo(
-        pool: &'pool mut crate::Pool,
-        hostinfo: &str,
-    ) -> Result<Self, crate::Status> {
-        let mut uri = pool.alloc::<apr_uri_t>();
-        unsafe {
-            let hostinfo = std::ffi::CStr::from_ptr(hostinfo.as_ptr() as *const i8);
+    pub fn parse_hostinfo(hostinfo: &str) -> Result<Self, crate::Status> {
+        Ok(Self(PooledPtr::initialize(|pool| unsafe {
+            let uri = pool.alloc::<apr_uri_t>();
             let status = crate::generated::apr_uri_parse_hostinfo(
                 pool.into(),
                 hostinfo.as_ptr() as *const i8,
-                &mut uri as *mut _ as *mut _,
+                uri as *mut _ as *mut _,
             );
             let status = crate::Status::from(status);
             if status.is_success() {
-                Ok(Uri(uri as *mut _, std::marker::PhantomData))
+                Ok(&mut uri.as_mut().unwrap().assume_init())
             } else {
                 Err(status)
             }
-        }
+        })?))
     }
 
-    pub fn parse(pool: &'pool mut crate::Pool, url: &str) -> Result<Self, crate::Status> {
-        let mut uri = pool.alloc::<apr_uri_t>();
-        unsafe {
-            let url = std::ffi::CStr::from_ptr(url.as_ptr() as *const i8);
+    pub fn parse(url: &str) -> Result<Self, crate::Status> {
+        Ok(Self(PooledPtr::initialize(|pool| unsafe {
+            let uri = pool.alloc::<apr_uri_t>();
+            let url = std::ffi::CString::new(url).unwrap();
             let status = crate::generated::apr_uri_parse(
                 pool.into(),
                 url.as_ptr() as *const i8,
-                &mut uri as *mut _ as *mut _,
+                uri as *mut _ as *mut _,
             );
             let status = crate::Status::from(status);
             if status.is_success() {
-                Ok(Uri(uri as *mut _, std::marker::PhantomData))
+                Ok(&mut uri.as_mut().unwrap().assume_init())
             } else {
                 Err(status)
             }
-        }
+        })?))
     }
 }
 
@@ -129,5 +174,37 @@ mod tests {
         assert_eq!(80, super::port_of_scheme("http"));
         assert_eq!(443, super::port_of_scheme("https"));
         assert_eq!(0, super::port_of_scheme("unknown"));
+    }
+
+    #[test]
+    fn test_parse() {
+        let uri = super::Uri::parse("http://example.com:8080/").unwrap();
+        assert_eq!("http", uri.scheme().unwrap());
+        assert_eq!(Some("example.com:8080"), uri.hostinfo());
+        assert_eq!(Some("example.com"), uri.hostname());
+        assert_eq!(8080, uri.port());
+        assert_eq!(Some("/"), uri.path());
+        assert_eq!(None, uri.query());
+        assert_eq!(None, uri.fragment());
+        assert_eq!(Some("8080"), uri.port_str());
+        assert!(uri.is_initialized());
+        assert!(!uri.dns_looked_up());
+        assert!(!uri.dns_resolved());
+    }
+
+    #[test]
+    fn test_parse_hostinfo() {
+        let uri = super::Uri::parse_hostinfo("example.com:8080").unwrap();
+        assert_eq!(None, uri.scheme());
+        assert_eq!(Some("example.com:8080"), uri.hostinfo());
+        assert_eq!(Some("example.com"), uri.hostname());
+        assert_eq!(8080, uri.port());
+        assert_eq!(None, uri.path());
+        assert_eq!(None, uri.query());
+        assert_eq!(None, uri.fragment());
+        assert_eq!(Some("8080"), uri.port_str());
+        assert!(uri.is_initialized());
+        assert!(!uri.dns_looked_up());
+        assert!(!uri.dns_resolved());
     }
 }
