@@ -73,3 +73,7 @@ mod tests {
         assert_eq!(t.rfc822_date(), "Sun, 06 Nov 1994 08:49:37 GMT");
     }
 }
+
+pub trait IntoTime {
+    fn as_apr_time(&self) -> Time;
+}
