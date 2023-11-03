@@ -105,6 +105,10 @@ impl<'pool> Option<'pool> {
     pub fn as_ptr(&self) -> *const crate::generated::apr_getopt_option_t {
         self.0.as_ptr()
     }
+
+    pub fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_getopt_option_t {
+        self.0.as_mut_ptr()
+    }
 }
 
 pub struct Getopt<'pool>(PooledPtr<'pool, crate::generated::apr_getopt_t>);
