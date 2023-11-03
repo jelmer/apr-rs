@@ -30,6 +30,7 @@ fn create_bindings(out_path: &std::path::Path) {
         .header(apr_path.join("apr_date.h").to_str().unwrap())
         .header(apr_path.join("apr_version.h").to_str().unwrap())
         .header(apr_path.join("apu_version.h").to_str().unwrap())
+        .header(apr_path.join("apr_thread_proc.h").to_str().unwrap())
         .allowlist_file(".*/apr.h")
         .allowlist_file(".*/apr_general.h")
         .allowlist_file(".*/apr_allocator.h")
@@ -46,6 +47,7 @@ fn create_bindings(out_path: &std::path::Path) {
         .allowlist_file(".*/apr_date.h")
         .allowlist_file(".*/apr_version.h")
         .allowlist_file(".*/apu_version.h")
+        .allowlist_file(".*/apr_thread_proc.h")
         .clang_args(
             pc_apr
                 .include_paths

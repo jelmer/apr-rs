@@ -7,6 +7,7 @@ mod generated;
 
 pub mod date;
 pub mod file;
+pub mod getopt;
 pub mod hash;
 pub mod pool;
 pub mod status;
@@ -19,7 +20,11 @@ pub use pool::Pool;
 pub use status::Status;
 
 pub use generated::apr_byte_t;
+pub use generated::apr_dir_t;
+pub use generated::apr_exit_why_e;
 pub use generated::apr_file_t;
+pub use generated::apr_fileperms_t;
+pub use generated::apr_finfo_t;
 pub use generated::apr_getopt_option_t;
 pub use generated::apr_getopt_t;
 pub use generated::apr_int16_t;
@@ -27,6 +32,8 @@ pub use generated::apr_int32_t;
 pub use generated::apr_int64_t;
 pub use generated::apr_off_t;
 pub use generated::apr_pool_t;
+pub use generated::apr_proc_t;
+pub use generated::apr_seek_where_t;
 pub use generated::apr_size_t;
 pub use generated::apr_status_t;
 pub use generated::apr_time_t;

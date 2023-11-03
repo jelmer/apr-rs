@@ -115,7 +115,7 @@ impl<'pool> Uri<'pool> {
         let mut pool = crate::Pool::new();
         unsafe {
             CStr::from_ptr(crate::generated::apr_uri_unparse(
-                (&mut pool).into(),
+                pool.as_mut_ptr(),
                 &*self.0,
                 flags,
             ))
@@ -130,7 +130,7 @@ impl<'pool> Uri<'pool> {
             let uri = pool.calloc::<apr_uri_t>();
             let hostinfo = std::ffi::CString::new(hostinfo).unwrap();
             let status = crate::generated::apr_uri_parse_hostinfo(
-                pool.into(),
+                pool.as_mut_ptr(),
                 hostinfo.as_ptr() as *const i8,
                 uri as *mut _ as *mut _,
             );
@@ -148,7 +148,7 @@ impl<'pool> Uri<'pool> {
             let uri = pool.calloc::<apr_uri_t>();
             let url = std::ffi::CString::new(url).unwrap();
             let status = crate::generated::apr_uri_parse(
-                pool.into(),
+                pool.as_mut_ptr(),
                 url.as_ptr() as *const i8,
                 uri as *mut _ as *mut _,
             );

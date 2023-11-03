@@ -3,12 +3,6 @@ use crate::generated;
 #[derive(Debug)]
 pub struct Pool(*mut generated::apr_pool_t);
 
-impl From<Pool> for *mut generated::apr_pool_t {
-    fn from(p: Pool) -> Self {
-        p.0
-    }
-}
-
 impl Pool {
     /// Create a new pool.
     pub fn new() -> Self {
@@ -22,6 +16,14 @@ impl Pool {
             );
         }
         Pool(pool)
+    }
+
+    pub fn as_ptr(&self) -> *const generated::apr_pool_t {
+        self.0
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut generated::apr_pool_t {
+        self.0
     }
 
     /// Create a subpool.
@@ -85,18 +87,6 @@ impl Pool {
     }
 }
 
-impl From<&mut Pool> for *mut generated::apr_pool_t {
-    fn from(p: &mut Pool) -> Self {
-        p.0
-    }
-}
-
-impl From<&Pool> for *mut generated::apr_pool_t {
-    fn from(p: &Pool) -> Self {
-        p.0
-    }
-}
-
 impl Default for Pool {
     fn default() -> Self {
         Pool::new()
@@ -112,12 +102,6 @@ impl Drop for Pool {
 }
 pub struct Allocator(*mut generated::apr_allocator_t);
 
-impl From<Allocator> for *mut generated::apr_allocator_t {
-    fn from(a: Allocator) -> Self {
-        a.0
-    }
-}
-
 impl Allocator {
     pub fn new() -> Self {
         let mut allocator: *mut generated::apr_allocator_t = std::ptr::null_mut();
@@ -125,6 +109,10 @@ impl Allocator {
             generated::apr_allocator_create(&mut allocator);
         }
         Allocator(allocator)
+    }
+
+    pub fn as_ptr(&self) -> *const generated::apr_allocator_t {
+        self.0
     }
 }
 
@@ -267,6 +255,14 @@ impl<'pool, T> PooledPtr<'pool, T> {
     /// Get a reference to the pool that the value is allocated in.
     pub fn pool(&self) -> std::rc::Rc<Pool> {
         self.pool.clone()
+    }
+
+    pub fn as_ptr(&self) -> *const T {
+        self.data
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.data
     }
 }
 

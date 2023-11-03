@@ -25,7 +25,10 @@ impl<'pool, K: IntoHashKey<'pool>, V> Clone for Hash<'pool, K, V> {
         unsafe {
             Self(
                 PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_hash_copy(pool.into(), &*self.0))
+                    Ok::<_, crate::Status>(crate::generated::apr_hash_copy(
+                        pool.as_mut_ptr(),
+                        &*self.0,
+                    ))
                 })
                 .unwrap(),
                 PhantomData,
@@ -40,7 +43,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
         unsafe {
             Self(
                 PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_hash_make(pool.into()))
+                    Ok::<_, crate::Status>(crate::generated::apr_hash_make(pool.as_mut_ptr()))
                 })
                 .unwrap(),
                 PhantomData,
@@ -51,13 +54,11 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     /// Create a new hash map in the given pool.
     pub fn in_pool(pool: &std::rc::Rc<Pool>) -> Self {
         unsafe {
-            Self(
-                PooledPtr::in_pool(
-                    pool.clone(),
-                    crate::generated::apr_hash_make(pool.as_ref().into()),
-                ),
-                PhantomData,
-            )
+            let mut pool = pool.clone();
+            let data = crate::generated::apr_hash_make(
+                std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
+            );
+            Self(PooledPtr::in_pool(pool, data), PhantomData)
         }
     }
 
@@ -110,7 +111,10 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     pub fn iter(&mut self) -> Iter<'pool, V> {
         Iter(
             PooledPtr::initialize(|pool| unsafe {
-                Ok::<_, crate::Status>(crate::generated::apr_hash_first(pool.into(), &mut *self.0))
+                Ok::<_, crate::Status>(crate::generated::apr_hash_first(
+                    pool.as_mut_ptr(),
+                    &mut *self.0,
+                ))
             })
             .unwrap(),
             PhantomData,
@@ -121,10 +125,17 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     pub fn keys(&mut self) -> Keys<'pool> {
         Keys(
             PooledPtr::initialize(|pool| unsafe {
-                Ok::<_, crate::Status>(crate::generated::apr_hash_first(pool.into(), &mut *self.0))
+                Ok::<_, crate::Status>(crate::generated::apr_hash_first(
+                    pool.as_mut_ptr(),
+                    &mut *self.0,
+                ))
             })
             .unwrap(),
         )
+    }
+
+    pub fn as_ptr(&self) -> *const apr_hash_t {
+        &*self.0
     }
 }
 
@@ -190,18 +201,6 @@ impl<'pool> Iterator for Keys<'pool> {
         let key = unsafe { std::slice::from_raw_parts(key as *const u8, key_len as usize) };
 
         Some(key)
-    }
-}
-
-impl<'pool, K: IntoHashKey<'pool>, V> From<Hash<'pool, K, V>> for *const apr_hash_t {
-    fn from(hash: Hash<'pool, K, V>) -> Self {
-        &*hash.0
-    }
-}
-
-impl<'pool, K: IntoHashKey<'pool>, V> From<&Hash<'pool, K, V>> for *const apr_hash_t {
-    fn from(hash: &Hash<'pool, K, V>) -> Self {
-        &*hash.0
     }
 }
 

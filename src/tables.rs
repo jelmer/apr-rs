@@ -27,7 +27,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         Self(
             crate::pool::PooledPtr::initialize(|pool| unsafe {
                 Ok::<_, crate::Status>(crate::generated::apr_array_make(
-                    pool.into(),
+                    pool.as_mut_ptr(),
                     nelts as i32,
                     std::mem::size_of::<T>() as i32,
                 ))
@@ -39,9 +39,9 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
 
     pub fn in_pool(pool: &std::rc::Rc<crate::Pool>, nelts: usize) -> Self {
         unsafe {
-            let pool = pool.clone();
+            let mut pool = pool.clone();
             let hdr = crate::generated::apr_array_make(
-                pool.as_ref().into(),
+                std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
                 nelts as i32,
                 std::mem::size_of::<T>() as i32,
             );
@@ -109,7 +109,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
             Self(
                 PooledPtr::initialize(|pool| {
                     Ok::<_, crate::Status>(crate::generated::apr_array_append(
-                        pool.into(),
+                        pool.as_mut_ptr(),
                         &*first.0,
                         &*second.0,
                     ))
@@ -124,7 +124,10 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         unsafe {
             Self(
                 PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_array_copy(pool.into(), &*self.0))
+                    Ok::<_, crate::Status>(crate::generated::apr_array_copy(
+                        pool.as_mut_ptr(),
+                        &*self.0,
+                    ))
                 })
                 .unwrap(),
                 std::marker::PhantomData,
@@ -135,23 +138,15 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     pub fn iter(&self) -> ArrayHeaderIterator<T> {
         ArrayHeaderIterator::new(self)
     }
+
+    pub fn as_ptr(&self) -> *const crate::generated::apr_array_header_t {
+        self.0.as_ref()
+    }
 }
 
 impl<T: Sized + Copy> Default for ArrayHeader<'_, T> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl<'pool, T: Sized> From<ArrayHeader<'pool, T>> for *const apr_array_header_t {
-    fn from(array: ArrayHeader<T>) -> Self {
-        &*array.0
-    }
-}
-
-impl<'pool, T: Sized> From<&ArrayHeader<'pool, T>> for *const apr_array_header_t {
-    fn from(array: &ArrayHeader<T>) -> Self {
-        &*array.0
     }
 }
 
@@ -204,7 +199,10 @@ impl<'pool> Clone for Table<'pool> {
         unsafe {
             Self(
                 PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_table_copy(pool.into(), &*self.0))
+                    Ok::<_, crate::Status>(crate::generated::apr_table_copy(
+                        pool.as_mut_ptr(),
+                        &*self.0,
+                    ))
                 })
                 .unwrap(),
             )
@@ -228,7 +226,7 @@ impl<'pool> Table<'pool> {
             Self(
                 PooledPtr::initialize(|pool| {
                     Ok::<_, crate::Status>(crate::generated::apr_table_make(
-                        pool.into(),
+                        pool.as_mut_ptr(),
                         nelts as i32,
                     ))
                 })
@@ -252,7 +250,7 @@ impl<'pool> Table<'pool> {
     pub fn getm(&self, pool: &mut crate::Pool, key: &str) -> Option<&str> {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
-            let value = crate::generated::apr_table_getm(pool.into(), &*self.0, key.as_ptr());
+            let value = crate::generated::apr_table_getm(pool.as_mut_ptr(), &*self.0, key.as_ptr());
             if value.is_null() {
                 None
             } else {
@@ -313,7 +311,7 @@ impl<'pool> Table<'pool> {
             Self(
                 PooledPtr::initialize(|pool| {
                     Ok::<_, crate::Status>(crate::generated::apr_table_overlay(
-                        pool.into(),
+                        pool.as_mut_ptr(),
                         &*overlay.0,
                         &*base.0,
                     ))
