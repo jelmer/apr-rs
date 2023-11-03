@@ -254,6 +254,14 @@ impl<'pool> Getopt<'pool> {
             _ => panic!("unexpected status: {}", rv),
         }
     }
+
+    pub fn as_ptr(&self) -> *const crate::generated::apr_getopt_t {
+        self.0.as_ptr()
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_getopt_t {
+        self.0.as_mut_ptr()
+    }
 }
 
 #[cfg(test)]
