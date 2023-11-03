@@ -18,6 +18,10 @@ impl Pool {
         Pool(pool)
     }
 
+    pub fn from_raw(ptr: *mut generated::apr_pool_t) -> Self {
+        Pool(ptr)
+    }
+
     pub fn as_ptr(&self) -> *const generated::apr_pool_t {
         self.0
     }

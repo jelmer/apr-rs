@@ -51,6 +51,10 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
         }
     }
 
+    pub fn from_raw(raw: PooledPtr<'pool, apr_hash_t>) -> Self {
+        Self(raw, PhantomData)
+    }
+
     /// Create a new hash map in the given pool.
     pub fn in_pool(pool: &std::rc::Rc<Pool>) -> Self {
         unsafe {
