@@ -221,7 +221,7 @@ mod tests {
 // TODO(jelmer): Rather than serializing/deserializing, we should be able to just copy the fields
 // over.
 #[cfg(feature = "url")]
-impl From<url::Url> for Uri<'_> {
+impl From<url::Url> for Uri {
     fn from(url: url::Url) -> Self {
         let s = url.as_str();
         Self::parse(s).unwrap()
@@ -229,8 +229,8 @@ impl From<url::Url> for Uri<'_> {
 }
 
 #[cfg(feature = "url")]
-impl From<Uri<'_>> for url::Url {
-    fn from(uri: Uri<'_>) -> Self {
+impl From<Uri> for url::Url {
+    fn from(uri: Uri) -> Self {
         let s = uri.unparse(0);
         url::Url::parse(&s).unwrap()
     }
