@@ -58,6 +58,16 @@ impl Status {
         !self.is_success()
     }
 
+    pub fn raw_os_error(&self) -> Option<i32> {
+        match self {
+            Status::Success => None,
+            e if (*e) as u32 >= crate::generated::APR_OS_START_SYSERR => {
+                Some((*e as u32 - crate::generated::APR_OS_START_SYSERR) as i32)
+            }
+            _ => None,
+        }
+    }
+
     pub fn strerror(&self) -> String {
         let buf = unsafe {
             let mut buf = [0u8; 1024];
