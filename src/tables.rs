@@ -1,13 +1,9 @@
 pub use crate::generated::{apr_array_header_t, apr_table_t};
 use crate::pool::PooledPtr;
 
-pub struct ArrayHeader<'pool, T: Sized>(
-    PooledPtr<apr_array_header_t>,
-    std::marker::PhantomData<T>,
-    std::marker::PhantomData<&'pool ()>,
-);
+pub struct ArrayHeader<T: Sized>(PooledPtr<apr_array_header_t>, std::marker::PhantomData<T>);
 
-impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
+impl<T: Sized + Copy> ArrayHeader<T> {
     pub fn is_empty(&self) -> bool {
         unsafe { crate::generated::apr_is_empty_array(&*self.0) != 0 }
     }
@@ -35,7 +31,6 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
             })
             .unwrap(),
             std::marker::PhantomData,
-            std::marker::PhantomData,
         )
     }
 
@@ -50,7 +45,6 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
 
             Self(
                 crate::pool::PooledPtr::in_pool(pool, hdr),
-                std::marker::PhantomData,
                 std::marker::PhantomData,
             )
         }
@@ -67,7 +61,6 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     ) -> Self {
         Self(
             crate::pool::PooledPtr::in_pool(pool.clone(), raw),
-            std::marker::PhantomData,
             std::marker::PhantomData,
         )
     }
@@ -120,7 +113,6 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
                 })
                 .unwrap(),
                 std::marker::PhantomData,
-                std::marker::PhantomData,
             )
         }
     }
@@ -136,7 +128,6 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
                 })
                 .unwrap(),
                 std::marker::PhantomData,
-                std::marker::PhantomData,
             )
         }
     }
@@ -150,13 +141,13 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     }
 }
 
-impl<T: Sized + Copy> Default for ArrayHeader<'_, T> {
+impl<T: Sized + Copy> Default for ArrayHeader<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<'_, T> {
+impl<T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -164,8 +155,8 @@ impl<T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<'_, T> {
     }
 }
 
-pub struct ArrayHeaderIterator<'pool, T: Sized> {
-    array: &'pool ArrayHeader<'pool, T>,
+pub struct ArrayHeaderIterator<'a, T: Sized> {
+    array: &'a ArrayHeader<T>,
     index: usize,
 }
 
@@ -188,7 +179,7 @@ impl<'a, T: Sized + Copy> Iterator for ArrayHeaderIterator<'a, T> {
     }
 }
 
-impl<'pool, T: Sized + Copy> FromIterator<T> for ArrayHeader<'pool, T> {
+impl<T: Sized + Copy> FromIterator<T> for ArrayHeader<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut array = ArrayHeader::new();
         for item in iter {
@@ -369,5 +360,16 @@ mod tests {
         assert_eq!(array.iter().collect::<Vec<_>>(), vec!["1", "2", "3", "4"]);
 
         assert_eq!(array[1], "2");
+    }
+
+    #[test]
+    fn test_convert() {
+        let mut array = super::ArrayHeader::new();
+        array.push("1");
+        array.push("2");
+        array.push("3");
+        array.push("4");
+
+        assert_eq!(array.iter().collect::<Vec<_>>(), vec!["1", "2", "3", "4"]);
     }
 }
