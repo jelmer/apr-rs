@@ -151,27 +151,19 @@ mod tests {
 }
 
 /// A wrapper around a value that is allocated in a pool.
-pub struct Pooled<'pool, T>
-where
-    T: 'pool,
-{
+pub struct Pooled<T> {
     pool: std::rc::Rc<Pool>,
     pub data: T,
-    _marker: std::marker::PhantomData<&'pool T>,
 }
 
-impl<'pool, T> Pooled<'pool, T> {
+impl<T> Pooled<T> {
     /// Create a pooled value, using the given closure to initialize it.
     pub fn initialize<E: std::error::Error>(
         cb: impl FnOnce(&mut Pool) -> Result<T, E>,
     ) -> Result<Self, E> {
         let mut pool = std::rc::Rc::new(Pool::new());
         let data = cb(std::rc::Rc::get_mut(&mut pool).as_mut().unwrap())?;
-        Ok(Pooled {
-            pool,
-            data,
-            _marker: std::marker::PhantomData,
-        })
+        Ok(Pooled { pool, data })
     }
 
     /// Create a pooled value from a value allocated in a pool.
@@ -181,11 +173,7 @@ impl<'pool, T> Pooled<'pool, T> {
     /// The data must be allocated in the pool.
     pub unsafe fn in_pool(pool: std::rc::Rc<Pool>, data: T) -> Self {
         // Assert that the data is allocated in the pool.
-        Pooled {
-            pool,
-            data,
-            _marker: std::marker::PhantomData,
-        }
+        Pooled { pool, data }
     }
 
     /// Get a reference to the pool that the value is allocated in.
@@ -194,13 +182,13 @@ impl<'pool, T> Pooled<'pool, T> {
     }
 }
 
-impl<'pool, T> AsRef<T> for Pooled<'pool, T> {
+impl<T> AsRef<T> for Pooled<T> {
     fn as_ref(&self) -> &T {
         &self.data
     }
 }
 
-impl<'pool, T> std::ops::Deref for Pooled<'pool, T> {
+impl<T> std::ops::Deref for Pooled<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -208,34 +196,26 @@ impl<'pool, T> std::ops::Deref for Pooled<'pool, T> {
     }
 }
 
-impl<'pool, T> std::ops::DerefMut for Pooled<'pool, T> {
+impl<T> std::ops::DerefMut for Pooled<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
 }
 
 /// A wrapper around a pointer to a value that is allocated in a pool.
-pub struct PooledPtr<'pool, T>
-where
-    T: 'pool,
-{
+pub struct PooledPtr<T> {
     pool: std::rc::Rc<Pool>,
     data: *mut T,
-    _marker: std::marker::PhantomData<&'pool T>,
 }
 
-impl<'pool, T> PooledPtr<'pool, T> {
+impl<T> PooledPtr<T> {
     /// Create a pooled value, using the given closure to initialize it.
     pub fn initialize<E: std::error::Error>(
         cb: impl FnOnce(&mut Pool) -> Result<*mut T, E>,
     ) -> Result<Self, E> {
         let mut pool = std::rc::Rc::new(Pool::new());
         let data = cb(std::rc::Rc::get_mut(&mut pool).as_mut().unwrap())?;
-        Ok(PooledPtr {
-            pool,
-            data,
-            _marker: std::marker::PhantomData,
-        })
+        Ok(PooledPtr { pool, data })
     }
 
     /// Create a pooled value from a value allocated in a pool.
@@ -245,11 +225,7 @@ impl<'pool, T> PooledPtr<'pool, T> {
     /// The data must be allocated in the pool.
     pub unsafe fn in_pool(pool: std::rc::Rc<Pool>, data: *mut T) -> Self {
         // TODO: Assert that the data is allocated in the pool.
-        PooledPtr {
-            pool,
-            data,
-            _marker: std::marker::PhantomData,
-        }
+        PooledPtr { pool, data }
     }
 
     pub fn is_null(&self) -> bool {
@@ -270,12 +246,12 @@ impl<'pool, T> PooledPtr<'pool, T> {
     }
 }
 
-impl<'pool, T> AsRef<T> for PooledPtr<'pool, T> {
+impl<T> AsRef<T> for PooledPtr<T> {
     fn as_ref(&self) -> &T {
         unsafe { &*self.data }
     }
 }
-impl<'pool, T> std::ops::Deref for PooledPtr<'pool, T> {
+impl<T> std::ops::Deref for PooledPtr<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -283,7 +259,7 @@ impl<'pool, T> std::ops::Deref for PooledPtr<'pool, T> {
     }
 }
 
-impl<'pool, T> std::ops::DerefMut for PooledPtr<'pool, T> {
+impl<T> std::ops::DerefMut for PooledPtr<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.data }
     }

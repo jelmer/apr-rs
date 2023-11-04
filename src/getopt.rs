@@ -16,7 +16,10 @@ impl IntoAllowedOptionChars for &[char] {
     }
 }
 
-pub struct Option<'pool>(PooledPtr<'pool, crate::generated::apr_getopt_option_t>);
+pub struct Option<'pool>(
+    PooledPtr<crate::generated::apr_getopt_option_t>,
+    std::marker::PhantomData<&'pool ()>,
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Indicator {
@@ -69,6 +72,7 @@ impl<'pool> Option<'pool> {
                 Ok::<_, crate::Status>(option)
             })
             .unwrap(),
+            std::marker::PhantomData,
         )
     }
 
@@ -111,7 +115,7 @@ impl<'pool> Option<'pool> {
     }
 }
 
-pub struct Getopt<'pool>(PooledPtr<'pool, crate::generated::apr_getopt_t>);
+pub struct Getopt(PooledPtr<crate::generated::apr_getopt_t>);
 
 pub enum GetoptResult {
     Option(Indicator, std::option::Option<String>),
@@ -120,8 +124,8 @@ pub enum GetoptResult {
     End,
 }
 
-impl<'pool> Getopt<'pool> {
-    pub fn new(args: &[&'pool str]) -> Result<Self, crate::Status> {
+impl Getopt {
+    pub fn new(args: &[&str]) -> Result<Self, crate::Status> {
         PooledPtr::initialize(|pool| unsafe {
             let mut os = std::ptr::null_mut();
 

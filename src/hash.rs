@@ -2,7 +2,7 @@ pub use crate::generated::apr_hash_t;
 use crate::pool::{Pool, PooledPtr};
 use std::marker::PhantomData;
 
-pub struct Hash<'pool, K: IntoHashKey<'pool>, V>(PooledPtr<'pool, apr_hash_t>, PhantomData<(K, V)>);
+pub struct Hash<'pool, K: IntoHashKey<'pool>, V>(PooledPtr<apr_hash_t>, PhantomData<(K, &'pool V)>);
 
 pub trait IntoHashKey<'pool> {
     fn into_hash_key(self) -> &'pool [u8];
@@ -51,7 +51,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
         }
     }
 
-    pub fn from_raw(raw: PooledPtr<'pool, apr_hash_t>) -> Self {
+    pub fn from_raw(raw: PooledPtr<apr_hash_t>) -> Self {
         Self(raw, PhantomData)
     }
 
@@ -135,6 +135,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
                 ))
             })
             .unwrap(),
+            PhantomData,
         )
     }
 
@@ -150,8 +151,8 @@ impl<'pool> Default for Hash<'pool, &'pool str, &'pool str> {
 }
 
 pub struct Iter<'pool, V>(
-    PooledPtr<'pool, crate::generated::apr_hash_index_t>,
-    PhantomData<V>,
+    PooledPtr<crate::generated::apr_hash_index_t>,
+    PhantomData<&'pool V>,
 );
 
 impl<'pool, V> Iterator for Iter<'pool, V>
@@ -186,7 +187,10 @@ where
     }
 }
 
-pub struct Keys<'pool>(PooledPtr<'pool, crate::generated::apr_hash_index_t>);
+pub struct Keys<'pool>(
+    PooledPtr<crate::generated::apr_hash_index_t>,
+    PhantomData<&'pool [u8]>,
+);
 
 impl<'pool> Iterator for Keys<'pool> {
     type Item = &'pool [u8];
