@@ -156,7 +156,7 @@ where
     T: 'pool,
 {
     pool: std::rc::Rc<Pool>,
-    data: T,
+    pub data: T,
     _marker: std::marker::PhantomData<&'pool T>,
 }
 
