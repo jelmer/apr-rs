@@ -2,8 +2,9 @@ pub use crate::generated::{apr_array_header_t, apr_table_t};
 use crate::pool::PooledPtr;
 
 pub struct ArrayHeader<'pool, T: Sized>(
-    PooledPtr<'pool, apr_array_header_t>,
+    PooledPtr<apr_array_header_t>,
     std::marker::PhantomData<T>,
+    std::marker::PhantomData<&'pool ()>,
 );
 
 impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
@@ -34,6 +35,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
             })
             .unwrap(),
             std::marker::PhantomData,
+            std::marker::PhantomData,
         )
     }
 
@@ -48,6 +50,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
 
             Self(
                 crate::pool::PooledPtr::in_pool(pool, hdr),
+                std::marker::PhantomData,
                 std::marker::PhantomData,
             )
         }
@@ -64,6 +67,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     ) -> Self {
         Self(
             crate::pool::PooledPtr::in_pool(pool.clone(), raw),
+            std::marker::PhantomData,
             std::marker::PhantomData,
         )
     }
@@ -116,6 +120,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
                 })
                 .unwrap(),
                 std::marker::PhantomData,
+                std::marker::PhantomData,
             )
         }
     }
@@ -130,6 +135,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
                     ))
                 })
                 .unwrap(),
+                std::marker::PhantomData,
                 std::marker::PhantomData,
             )
         }
@@ -192,7 +198,7 @@ impl<'pool, T: Sized + Copy> FromIterator<T> for ArrayHeader<'pool, T> {
     }
 }
 
-pub struct Table<'pool>(PooledPtr<'pool, apr_table_t>);
+pub struct Table<'pool>(PooledPtr<apr_table_t>, std::marker::PhantomData<&'pool ()>);
 
 impl<'pool> Clone for Table<'pool> {
     fn clone(&self) -> Self {
@@ -205,6 +211,7 @@ impl<'pool> Clone for Table<'pool> {
                     ))
                 })
                 .unwrap(),
+                std::marker::PhantomData,
             )
         }
     }
@@ -231,6 +238,7 @@ impl<'pool> Table<'pool> {
                     ))
                 })
                 .unwrap(),
+                std::marker::PhantomData,
             )
         }
     }
@@ -317,6 +325,7 @@ impl<'pool> Table<'pool> {
                     ))
                 })
                 .unwrap(),
+                std::marker::PhantomData,
             )
         }
     }

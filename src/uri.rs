@@ -2,9 +2,9 @@ pub use crate::generated::apr_uri_t;
 use crate::pool::PooledPtr;
 use std::ffi::CStr;
 
-pub struct Uri<'pool>(PooledPtr<'pool, apr_uri_t>);
+pub struct Uri(PooledPtr<apr_uri_t>);
 
-impl<'pool> Uri<'pool> {
+impl Uri {
     pub fn scheme(&self) -> Option<&str> {
         unsafe {
             if self.0.scheme.is_null() {
@@ -162,7 +162,7 @@ impl<'pool> Uri<'pool> {
     }
 }
 
-impl std::str::FromStr for Uri<'_> {
+impl std::str::FromStr for Uri {
     type Err = crate::Status;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
