@@ -134,6 +134,12 @@ impl std::fmt::Display for Status {
 
 impl std::error::Error for Status {}
 
+impl From<Status> for u32 {
+    fn from(status: Status) -> Self {
+        status as u32
+    }
+}
+
 impl From<i32> for Status {
     fn from(status: i32) -> Self {
         (status as u32).into()
