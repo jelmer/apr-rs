@@ -1,17 +1,10 @@
 extern crate bindgen;
-extern crate pkg_config;
 
-fn create_bindings(out_path: &std::path::Path) {
-    let pc_apr = pkg_config::Config::new()
-        .probe("apr-1")
-        .unwrap_or_else(|e| panic!("Failed to find apr library: {}", e));
-
-    let apr_path = pc_apr
-        .include_paths
-        .iter()
-        .find(|x| x.join("apr.h").exists())
-        .expect("Failed to find apr.h");
-
+fn create_bindings(
+    apr_path: &std::path::Path,
+    out_path: &std::path::Path,
+    apr_include_paths: &[&std::path::Path],
+) {
     // Generate bindings using bindgen
     let bindings = bindgen::Builder::default()
         .header(apr_path.join("apr.h").to_str().unwrap())
@@ -51,8 +44,7 @@ fn create_bindings(out_path: &std::path::Path) {
         .allowlist_file(".*/apu_version.h")
         .allowlist_file(".*/apr_thread_proc.h")
         .clang_args(
-            pc_apr
-                .include_paths
+            apr_include_paths
                 .iter()
                 .map(|path| format!("-I{}", path.display())),
         )
@@ -65,8 +57,24 @@ fn create_bindings(out_path: &std::path::Path) {
 }
 
 fn main() {
-    system_deps::Config::new().probe().unwrap();
+    let deps = system_deps::Config::new().probe().unwrap();
+
+    let apr = deps.get_by_name("apr-1").unwrap();
+
+    let apr_path = apr
+        .include_paths
+        .iter()
+        .find(|x| x.join("apr.h").exists())
+        .expect("Failed to find apr.h");
 
     let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    create_bindings(out_path.as_path());
+    create_bindings(
+        apr_path.as_path(),
+        out_path.as_path(),
+        apr.include_paths
+            .iter()
+            .map(|x| x.as_path())
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
 }

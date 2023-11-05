@@ -20,7 +20,6 @@ url = ["dep:url"]
 
 [build-dependencies]
 bindgen = ">=0.60"
-pkg-config = "0.3"
 system-deps = "6"
 
 [package.metadata.system-deps]
