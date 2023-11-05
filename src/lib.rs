@@ -11,6 +11,7 @@ pub mod getopt;
 pub mod hash;
 pub mod pool;
 pub mod status;
+pub mod strings;
 pub mod tables;
 pub mod time;
 pub mod uri;
