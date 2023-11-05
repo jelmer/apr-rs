@@ -17,7 +17,6 @@ version = "0.1.9"
 dependencies = [
  "bindgen",
  "ctor",
- "pkg-config",
  "system-deps",
  "url",
 ]
