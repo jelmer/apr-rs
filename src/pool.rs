@@ -202,6 +202,15 @@ impl<T> std::ops::DerefMut for Pooled<T> {
     }
 }
 
+impl<T: std::fmt::Debug> std::fmt::Debug for Pooled<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pooled")
+            .field("pool", &self.pool)
+            .field("data", &self.data)
+            .finish()
+    }
+}
+
 /// A wrapper around a pointer to a value that is allocated in a pool.
 pub struct PooledPtr<T> {
     pool: std::rc::Rc<Pool>,
@@ -262,5 +271,23 @@ impl<T> std::ops::Deref for PooledPtr<T> {
 impl<T> std::ops::DerefMut for PooledPtr<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.data }
+    }
+}
+
+impl<T> std::fmt::Debug for PooledPtr<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PooledPtr")
+            .field("pool", &self.pool)
+            .field("data", &self.data)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod pooled_tests {
+    #[test]
+    fn test_pooled() {
+        let pooled = super::Pooled::initialize(|_pool| Ok::<_, std::io::Error>(1)).unwrap();
+        assert_eq!(*pooled, 1);
     }
 }
