@@ -12,12 +12,26 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
     - name: Install apr
       run: sudo apt install -y libapr1-dev libaprutil1-dev libutf8proc-dev
+      if: "matrix.os == 'ubuntu-latest'"
+    - name: Install apr (Mac OS)
+      run: |
+        brew install apr-util apr pkg-config utf8proc
+        echo "$(brew --prefix)/opt/apr-util/bin" >> $GITHUB_PATH
+        echo "$(brew --prefix)/opt/apr/bin" >> $GITHUB_PATH
+        echo "$(brew --prefix)/opt/pkg-config/bin" >> $GITHUB_PATH
+        pkg-config --list-all
+        which pkg-config
+      if: "matrix.os == 'macos-latest'"
     - name: Build
       run: cargo build --verbose
     - name: Run tests
