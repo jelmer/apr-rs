@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Install apr
       run: sudo apt install -y libapr1-dev libaprutil1-dev libutf8proc-dev
     - name: Build
