@@ -26,10 +26,14 @@ pub fn parse_rfc(data: &str) -> Option<Time> {
 #[test]
 fn test_parse_http() {
     let expected = Time::from(784111777000000);
-    assert_eq!(parse_http("WTAF"), None);
     assert_eq!(parse_http("Sun, 06 Nov 1994 08:49:37 GMT"), Some(expected));
     assert_eq!(parse_http("Sunday, 06-Nov-94 08:49:37 GMT"), Some(expected));
     assert_eq!(parse_http("Sun Nov  6 08:49:37 1994"), Some(expected));
+}
+
+#[test]
+fn test_parse_http_invalid() {
+    assert_eq!(parse_http("WTAF"), None);
 }
 
 #[test]
