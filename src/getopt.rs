@@ -62,7 +62,7 @@ impl<'pool> Option<'pool> {
 
         Self(
             PooledPtr::initialize(|pool| unsafe {
-                let mut option = pool.calloc::<crate::generated::apr_getopt_option_t>();
+                let option = pool.calloc::<crate::generated::apr_getopt_option_t>();
                 (*option).name = name.as_ptr() as *mut _;
                 (*option).has_arg = if has_arg { 1 } else { 0 };
                 (*option).optch = indicator.into();
