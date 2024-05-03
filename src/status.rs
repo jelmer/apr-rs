@@ -73,7 +73,7 @@ impl Status {
             let mut buf = [0u8; 1024];
             crate::generated::apr_strerror(
                 *self as crate::generated::apr_status_t,
-                buf.as_mut_ptr() as *mut i8,
+                buf.as_mut_ptr() as *mut std::ffi::c_char,
                 buf.len(),
             );
             buf

@@ -67,7 +67,7 @@ impl Pool {
     /// Set a tag for the pool.
     pub fn tag(&self, tag: &str) {
         unsafe {
-            generated::apr_pool_tag(self.0, tag.as_ptr() as *const i8);
+            generated::apr_pool_tag(self.0, tag.as_ptr() as *const std::ffi::c_char);
         }
     }
 
