@@ -13,7 +13,7 @@ impl Time {
         let mut buf: [u8; crate::generated::APR_CTIME_LEN as usize] =
             [0; crate::generated::APR_CTIME_LEN as usize];
         unsafe {
-            crate::generated::apr_ctime(buf.as_mut_ptr() as *mut i8, self.0);
+            crate::generated::apr_ctime(buf.as_mut_ptr() as *mut std::ffi::c_char, self.0);
         }
         String::from_utf8_lossy(&buf[..])
             .trim_end_matches('\0')
@@ -24,7 +24,7 @@ impl Time {
         let mut buf: [u8; crate::generated::APR_RFC822_DATE_LEN as usize] =
             [0; crate::generated::APR_RFC822_DATE_LEN as usize];
         unsafe {
-            crate::generated::apr_rfc822_date(buf.as_mut_ptr() as *mut i8, self.0);
+            crate::generated::apr_rfc822_date(buf.as_mut_ptr() as *mut std::ffi::c_char, self.0);
         }
         String::from_utf8_lossy(&buf[..])
             .trim_end_matches('\0')

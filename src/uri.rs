@@ -131,7 +131,7 @@ impl Uri {
             let hostinfo = std::ffi::CString::new(hostinfo).unwrap();
             let status = crate::generated::apr_uri_parse_hostinfo(
                 pool.as_mut_ptr(),
-                hostinfo.as_ptr() as *const i8,
+                hostinfo.as_ptr() as *const std::ffi::c_char,
                 uri as *mut _ as *mut _,
             );
             let status = crate::Status::from(status);
@@ -149,7 +149,7 @@ impl Uri {
             let url = std::ffi::CString::new(url).unwrap();
             let status = crate::generated::apr_uri_parse(
                 pool.as_mut_ptr(),
-                url.as_ptr() as *const i8,
+                url.as_ptr() as *const std::ffi::c_char,
                 uri as *mut _ as *mut _,
             );
             let status = crate::Status::from(status);
@@ -173,7 +173,7 @@ impl std::str::FromStr for Uri {
 /// Return the default port for a given scheme.
 pub fn port_of_scheme(scheme: &str) -> u16 {
     let scheme = std::ffi::CString::new(scheme).unwrap();
-    unsafe { crate::generated::apr_uri_port_of_scheme(scheme.as_ptr() as *const i8) }
+    unsafe { crate::generated::apr_uri_port_of_scheme(scheme.as_ptr() as *const std::ffi::c_char) }
 }
 
 #[cfg(test)]

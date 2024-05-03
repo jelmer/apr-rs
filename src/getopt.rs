@@ -177,10 +177,10 @@ impl Getopt {
     }
 
     pub fn getopt(&mut self, opts: impl IntoAllowedOptionChars) -> GetoptResult {
-        let mut opts: Vec<i8> = opts.into_iter().map(|c| c as i8).collect();
+        let mut opts: Vec<std::ffi::c_char> = opts.into_iter().map(|c| c as std::ffi::c_char).collect();
         opts.push(0);
         let mut option_ch = 0;
-        let mut option_arg: *const i8 = std::ptr::null_mut();
+        let mut option_arg: *const std::ffi::c_char = std::ptr::null_mut();
 
         let rv = unsafe {
             crate::generated::apr_getopt(
@@ -215,7 +215,7 @@ impl Getopt {
 
     pub fn getopt_long(&mut self, opts: &[Option]) -> GetoptResult {
         let mut option_ch: i32 = 0;
-        let mut option_arg: *const i8 = std::ptr::null();
+        let mut option_arg: *const std::ffi::c_char = std::ptr::null();
         let mut opts = opts
             .iter()
             .map(|o| o.as_ptr())

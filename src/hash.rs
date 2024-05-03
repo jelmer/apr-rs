@@ -215,7 +215,7 @@ impl<'pool> Iterator for Keys<'pool> {
 pub fn hash_default(key: &[u8]) -> u32 {
     unsafe {
         let mut len = key.len() as crate::generated::apr_ssize_t;
-        crate::generated::apr_hashfunc_default(key.as_ptr() as *const i8, &mut len)
+        crate::generated::apr_hashfunc_default(key.as_ptr() as *const std::ffi::c_char, &mut len)
     }
 }
 
