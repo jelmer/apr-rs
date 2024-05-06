@@ -7,6 +7,7 @@ repository = "https://github.com/jelmer/apr-rs.git"
 homepage = "https://github.com/jelmer/apr-rs"
 license = "Apache-2.0"
 description = "Rust bindings for Apache Portable Runtime"
+documentation = "https://docs.rs/apr"
 
 [lib]
 doctest = false
