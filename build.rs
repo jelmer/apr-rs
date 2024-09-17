@@ -2,6 +2,7 @@ extern crate bindgen;
 
 fn create_bindings(
     apr_path: &std::path::Path,
+    apu_path: &std::path::Path,
     out_path: &std::path::Path,
     apr_include_paths: &[&std::path::Path],
 ) {
@@ -18,11 +19,11 @@ fn create_bindings(
         .header(apr_path.join("apr_file_info.h").to_str().unwrap())
         .header(apr_path.join("apr_file_io.h").to_str().unwrap())
         .header(apr_path.join("apr_getopt.h").to_str().unwrap())
-        .header(apr_path.join("apr_uri.h").to_str().unwrap())
+        .header(apu_path.join("apr_uri.h").to_str().unwrap())
         .header(apr_path.join("apr_time.h").to_str().unwrap())
-        .header(apr_path.join("apr_date.h").to_str().unwrap())
+        .header(apu_path.join("apr_date.h").to_str().unwrap())
         .header(apr_path.join("apr_version.h").to_str().unwrap())
-        .header(apr_path.join("apu_version.h").to_str().unwrap())
+        .header(apu_path.join("apu_version.h").to_str().unwrap())
         .header(apr_path.join("apr_strings.h").to_str().unwrap())
         .header(apr_path.join("apr_thread_proc.h").to_str().unwrap())
         .allowlist_file(".*/apr.h")
@@ -61,15 +62,24 @@ fn main() {
 
     let apr = deps.get_by_name("apr-1").unwrap();
 
+    let apr_util = deps.get_by_name("apr-util-1").unwrap();
+
     let apr_path = apr
         .include_paths
         .iter()
         .find(|x| x.join("apr.h").exists())
         .expect("Failed to find apr.h");
 
+    let apr_util_path = apr_util
+        .include_paths
+        .iter()
+        .find(|x| x.join("apu.h").exists())
+        .expect("Failed to find apu.h");
+
     let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     create_bindings(
         apr_path.as_path(),
+        apr_util_path.as_path(),
         out_path.as_path(),
         apr.include_paths
             .iter()
