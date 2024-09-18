@@ -152,7 +152,7 @@ mod tests {
 
 /// A wrapper around a value that is allocated in a pool.
 pub struct Pooled<T> {
-    pool: std::rc::Rc<Pool>,
+    pool: std::sync::Arc<Pool>,
     pub data: T,
 }
 
@@ -161,8 +161,8 @@ impl<T> Pooled<T> {
     pub fn initialize<E: std::error::Error>(
         cb: impl FnOnce(&mut Pool) -> Result<T, E>,
     ) -> Result<Self, E> {
-        let mut pool = std::rc::Rc::new(Pool::new());
-        let data = cb(std::rc::Rc::get_mut(&mut pool).as_mut().unwrap())?;
+        let mut pool = std::sync::Arc::new(Pool::new());
+        let data = cb(std::sync::Arc::get_mut(&mut pool).as_mut().unwrap())?;
         Ok(Pooled { pool, data })
     }
 
@@ -171,13 +171,13 @@ impl<T> Pooled<T> {
     /// # Safety
     ///
     /// The data must be allocated in the pool.
-    pub unsafe fn in_pool(pool: std::rc::Rc<Pool>, data: T) -> Self {
+    pub unsafe fn in_pool(pool: std::sync::Arc<Pool>, data: T) -> Self {
         // Assert that the data is allocated in the pool.
         Pooled { pool, data }
     }
 
     /// Get a reference to the pool that the value is allocated in.
-    pub fn pool(&self) -> std::rc::Rc<Pool> {
+    pub fn pool(&self) -> std::sync::Arc<Pool> {
         self.pool.clone()
     }
 }
@@ -213,7 +213,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Pooled<T> {
 
 /// A wrapper around a pointer to a value that is allocated in a pool.
 pub struct PooledPtr<T> {
-    pool: std::rc::Rc<Pool>,
+    pool: std::sync::Arc<Pool>,
     data: *mut T,
 }
 
@@ -222,8 +222,8 @@ impl<T> PooledPtr<T> {
     pub fn initialize<E: std::error::Error>(
         cb: impl FnOnce(&mut Pool) -> Result<*mut T, E>,
     ) -> Result<Self, E> {
-        let mut pool = std::rc::Rc::new(Pool::new());
-        let data = cb(std::rc::Rc::get_mut(&mut pool).as_mut().unwrap())?;
+        let mut pool = std::sync::Arc::new(Pool::new());
+        let data = cb(std::sync::Arc::get_mut(&mut pool).as_mut().unwrap())?;
         Ok(PooledPtr { pool, data })
     }
 
@@ -232,7 +232,7 @@ impl<T> PooledPtr<T> {
     /// # Safety
     ///
     /// The data must be allocated in the pool.
-    pub unsafe fn in_pool(pool: std::rc::Rc<Pool>, data: *mut T) -> Self {
+    pub unsafe fn in_pool(pool: std::sync::Arc<Pool>, data: *mut T) -> Self {
         // TODO: Assert that the data is allocated in the pool.
         PooledPtr { pool, data }
     }
@@ -242,7 +242,7 @@ impl<T> PooledPtr<T> {
     }
 
     /// Get a reference to the pool that the value is allocated in.
-    pub fn pool(&self) -> std::rc::Rc<Pool> {
+    pub fn pool(&self) -> std::sync::Arc<Pool> {
         self.pool.clone()
     }
 

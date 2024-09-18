@@ -34,11 +34,11 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         )
     }
 
-    pub fn in_pool(pool: &std::rc::Rc<crate::Pool>, nelts: usize) -> Self {
+    pub fn in_pool(pool: &std::sync::Arc<crate::Pool>, nelts: usize) -> Self {
         unsafe {
             let mut pool = pool.clone();
             let hdr = crate::generated::apr_array_make(
-                std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
+                std::sync::Arc::get_mut(&mut pool).unwrap().as_mut_ptr(),
                 nelts as i32,
                 std::mem::size_of::<T>() as i32,
             );
@@ -56,7 +56,7 @@ impl<T: Sized + Copy> ArrayHeader<T> {
     ///
     /// The caller must ensure that the pointer is valid and that the memory is owned by the pool.
     pub unsafe fn from_raw_parts(
-        pool: &std::rc::Rc<crate::Pool>,
+        pool: &std::sync::Arc<crate::Pool>,
         raw: *mut apr_array_header_t,
     ) -> Self {
         Self(
