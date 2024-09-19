@@ -3,6 +3,19 @@ use crate::generated;
 #[derive(Debug)]
 pub struct Pool(*mut generated::apr_pool_t);
 
+#[cfg(feature = "pool-debug")]
+#[macro_export]
+macro_rules! pool_debug {
+    ($name:ident, $doc:expr) => {
+        #[doc = $doc]
+        pub fn $name(&mut self) -> Self {
+            let mut subpool: *mut generated::apr_pool_t = std::ptr::null_mut();
+            let location = std::concat!(file!(), ":", line!());
+            Pool::new_debug(location)
+        }
+    };
+}
+
 impl Pool {
     /// Create a new pool.
     pub fn new() -> Self {
@@ -12,7 +25,22 @@ impl Pool {
                 &mut pool,
                 std::ptr::null_mut(),
                 None,
-                std::ptr::null_mut() as *mut generated::apr_allocator_t,
+                std::ptr::null_mut(),
+            );
+        }
+        Pool(pool)
+    }
+
+    #[cfg(feature = "pool-debug")]
+    pub fn new_debug(location: &str) -> Self {
+        let mut pool: *mut generated::apr_pool_t = std::ptr::null_mut();
+        unsafe {
+            generated::apr_pool_create_ex_debug(
+                &mut pool,
+                std::ptr::null_mut(),
+                None,
+                std::ptr::null_mut(),
+                location.as_ptr() as *const std::ffi::c_char,
             );
         }
         Pool(pool)
@@ -80,11 +108,51 @@ impl Pool {
         }
     }
 
-    /// Get the parent pool, if any.
-    pub fn parent(&self) -> Self {
-        let parent = unsafe { generated::apr_pool_parent_get(self.0) };
-        Pool(parent)
+    pub unsafe fn fn_clear_debug(&mut self, location: &str) {
+        unsafe {
+            generated::apr_pool_clear_debug(self.0, location.as_ptr() as *const std::ffi::c_char);
+        }
     }
+
+    /// Get the parent pool, if any.
+    pub fn parent(&self) -> Option<Self> {
+        let parent = unsafe { generated::apr_pool_parent_get(self.0) };
+        if parent.is_null() {
+            None
+        } else {
+            Some(Pool(parent))
+        }
+    }
+
+    /// Run all registered child cleanups, in preparation for an exec() call.
+    pub fn cleanup_for_exec(&self) {
+        unsafe {
+            generated::apr_pool_cleanup_for_exec();
+        }
+    }
+
+    #[cfg(feature = "pool-debug")]
+    pub fn join(&self, other: &Pool) {
+        unsafe { generated::apr_pool_join(self.0, other.0) }
+    }
+
+    #[cfg(feature = "pool-debug")]
+    pub fn num_bytes(&self, recurse: bool) -> usize {
+        unsafe { generated::apr_pool_num_bytes(self.0, if recurse { 1 } else { 0 }) }
+    }
+
+    #[cfg(feature = "pool-debug")]
+    pub unsafe fn find(&self, ptr: *const std::ffi::c_void) -> Option<Pool> {
+        let pool = generated::apr_pool_find(ptr);
+        if pool.is_null() {
+            None
+        } else {
+            Some(Pool(pool))
+        }
+    }
+
+    #[cfg(not(feature = "pool-debug"))]
+    pub fn join(&self, _other: &Pool) {}
 }
 
 impl Default for Pool {
@@ -137,10 +205,11 @@ mod tests {
     #[test]
     fn test_pool() {
         let mut pool = Pool::new();
+        assert!(pool.parent().is_none());
         let subpool = pool.subpool();
         assert!(pool.is_ancestor(&subpool));
         assert!(!subpool.is_ancestor(&pool));
-        assert!(subpool.parent().is_ancestor(&subpool));
+        assert!(subpool.parent().unwrap().is_ancestor(&subpool));
         subpool.tag("subpool");
         pool.tag("pool");
     }
