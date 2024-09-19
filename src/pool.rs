@@ -1,7 +1,11 @@
 use crate::generated;
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Pool(*mut generated::apr_pool_t);
+
+// Pools are Send, but not Sync
+unsafe impl Send for Pool {}
 
 #[cfg(feature = "pool-debug")]
 #[macro_export]
@@ -50,11 +54,11 @@ impl Pool {
         Pool(ptr)
     }
 
-    pub fn as_ptr(&self) -> *const generated::apr_pool_t {
+    pub unsafe fn as_ptr(&self) -> *const generated::apr_pool_t {
         self.0
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut generated::apr_pool_t {
+    pub unsafe fn as_mut_ptr(&self) -> *mut generated::apr_pool_t {
         self.0
     }
 
@@ -67,19 +71,24 @@ impl Pool {
         Pool(subpool)
     }
 
+    #[allow(clippy::mut_from_ref)]
     /// Allocate memory in the pool.
-    pub fn alloc<T: Sized>(&mut self) -> *mut std::mem::MaybeUninit<T> {
+    pub fn alloc<T: Sized>(&self) -> &mut std::mem::MaybeUninit<T> {
         let size = std::mem::size_of::<T>();
-        unsafe { generated::apr_palloc(self.0, size) as *mut std::mem::MaybeUninit<T> }
+        unsafe {
+            let x = generated::apr_palloc(self.0, size) as *mut std::mem::MaybeUninit<T>;
+            &mut *x
+        }
     }
 
-    /// Allocate memory in the pool, and initialize it to zero.
-    pub fn calloc<T: Sized>(&mut self) -> *mut T {
-        let data = self.alloc::<T>();
+    #[allow(clippy::mut_from_ref)]
+    pub fn calloc<T: Sized>(&self) -> &mut T {
+        let size = std::mem::size_of::<T>();
         unsafe {
-            std::ptr::write_bytes(data as *mut u8, 0, std::mem::size_of::<T>());
+            let x = generated::apr_palloc(self.0, size) as *mut T;
+            std::ptr::write_bytes(x as *mut u8, 0, size);
+            &mut *x
         }
-        data as *mut T
     }
 
     /// Check if the pool is an ancestor of another pool.
@@ -108,6 +117,14 @@ impl Pool {
         }
     }
 
+    /// Clear all memory in the pool, with debug information.
+    ///
+    /// This does not actually free the memory, it just allows the pool to reuse this memory for the next allocation.
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe because it is possible to create a dangling pointer to memory that has been cleared.
+    #[cfg(feature = "pool-debug")]
     pub unsafe fn fn_clear_debug(&mut self, location: &str) {
         unsafe {
             generated::apr_pool_clear_debug(self.0, location.as_ptr() as *const std::ffi::c_char);
@@ -115,12 +132,12 @@ impl Pool {
     }
 
     /// Get the parent pool, if any.
-    pub fn parent(&self) -> Option<Self> {
+    pub fn parent(&self) -> Option<&Self> {
         let parent = unsafe { generated::apr_pool_parent_get(self.0) };
         if parent.is_null() {
             None
         } else {
-            Some(Pool(parent))
+            Some(unsafe { &*(parent as *const Pool) })
         }
     }
 
@@ -205,7 +222,8 @@ mod tests {
     #[test]
     fn test_pool() {
         let mut pool = Pool::new();
-        assert!(pool.parent().is_none());
+        let parent = pool.parent();
+        assert!(parent.unwrap().is_ancestor(&pool));
         let subpool = pool.subpool();
         assert!(pool.is_ancestor(&subpool));
         assert!(!subpool.is_ancestor(&pool));
@@ -345,6 +363,12 @@ impl<T> std::fmt::Debug for PooledPtr<T> {
             .field("pool", &self.pool)
             .field("data", &self.data)
             .finish()
+    }
+}
+
+pub unsafe fn terminate() {
+    unsafe {
+        generated::apr_pool_terminate();
     }
 }
 
