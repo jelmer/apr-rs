@@ -34,12 +34,7 @@ impl Pool {
     pub fn subpool(&self) -> Self {
         let mut subpool: *mut generated::apr_pool_t = std::ptr::null_mut();
         unsafe {
-            generated::apr_pool_create_ex(
-                &mut subpool,
-                self.0,
-                None,
-                std::ptr::null_mut() as *mut generated::apr_allocator_t,
-            );
+            generated::apr_pool_create_ex(&mut subpool, self.0, None, std::ptr::null_mut());
         }
         Pool(subpool)
     }
