@@ -56,11 +56,11 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     }
 
     /// Create a new hash map in the given pool.
-    pub fn in_pool(pool: &std::sync::Arc<Pool>) -> Self {
+    pub fn in_pool(pool: &std::rc::Rc<Pool>) -> Self {
         unsafe {
             let mut pool = pool.clone();
             let data = crate::generated::apr_hash_make(
-                std::sync::Arc::get_mut(&mut pool).unwrap().as_mut_ptr(),
+                std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
             );
             Self(PooledPtr::in_pool(pool, data), PhantomData)
         }
@@ -141,6 +141,10 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
 
     pub fn as_ptr(&self) -> *const apr_hash_t {
         &*self.0
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut apr_hash_t {
+        &mut *self.0
     }
 }
 
