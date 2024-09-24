@@ -1,10 +1,13 @@
+//! URI parsing and manipulation.
 pub use crate::generated::apr_uri_t;
 use crate::pool::PooledPtr;
 use std::ffi::CStr;
 
+/// A structure to represent a URI.
 pub struct Uri(PooledPtr<apr_uri_t>);
 
 impl Uri {
+    /// Return the scheme of the URI.
     pub fn scheme(&self) -> Option<&str> {
         unsafe {
             if self.0.scheme.is_null() {
@@ -15,6 +18,7 @@ impl Uri {
         }
     }
 
+    /// Return the hostinfo of the URI.
     pub fn hostinfo(&self) -> Option<&str> {
         unsafe {
             if self.0.hostinfo.is_null() {
@@ -25,6 +29,7 @@ impl Uri {
         }
     }
 
+    /// Return the username of the URI.
     pub fn user(&self) -> Option<&str> {
         unsafe {
             if self.0.user.is_null() {
@@ -35,6 +40,7 @@ impl Uri {
         }
     }
 
+    /// Return the password of the URI.
     pub fn password(&self) -> Option<&str> {
         unsafe {
             if self.0.password.is_null() {
@@ -45,6 +51,7 @@ impl Uri {
         }
     }
 
+    /// Return the hostname of the URI.
     pub fn hostname(&self) -> Option<&str> {
         unsafe {
             if self.0.hostname.is_null() {
@@ -55,10 +62,12 @@ impl Uri {
         }
     }
 
+    /// Return the port of the URI.
     pub fn port(&self) -> u16 {
         self.0.port
     }
 
+    /// Return the path of the URI.
     pub fn path(&self) -> Option<&str> {
         unsafe {
             if self.0.path.is_null() {
@@ -69,6 +78,7 @@ impl Uri {
         }
     }
 
+    /// Return the query of the URI.
     pub fn query(&self) -> Option<&str> {
         unsafe {
             if self.0.query.is_null() {
@@ -79,6 +89,7 @@ impl Uri {
         }
     }
 
+    /// Return the fragment of the URI.
     pub fn fragment(&self) -> Option<&str> {
         unsafe {
             if self.0.fragment.is_null() {
@@ -89,6 +100,7 @@ impl Uri {
         }
     }
 
+    /// Return the port as a string
     pub fn port_str(&self) -> Option<&str> {
         unsafe {
             if self.0.port_str.is_null() {
@@ -99,18 +111,22 @@ impl Uri {
         }
     }
 
+    /// Return whether the URI has been initialized.
     pub fn is_initialized(&self) -> bool {
         self.0.is_initialized() != 0
     }
 
+    /// Return whether the DNS has been looked up.
     pub fn dns_looked_up(&self) -> bool {
         self.0.dns_looked_up() != 0
     }
 
+    /// Return whether the DNS has been resolved.
     pub fn dns_resolved(&self) -> bool {
         self.0.dns_resolved() != 0
     }
 
+    /// Unparse the URI, returning a string.
     pub fn unparse(&self, flags: u32) -> String {
         let pool = crate::Pool::new();
         unsafe {
@@ -125,6 +141,7 @@ impl Uri {
         .to_string()
     }
 
+    /// Parse a hostinfo string.
     pub fn parse_hostinfo(hostinfo: &str) -> Result<Self, crate::Status> {
         Ok(Self(PooledPtr::initialize(|pool| unsafe {
             let uri = pool.calloc::<apr_uri_t>();
@@ -143,6 +160,7 @@ impl Uri {
         })?))
     }
 
+    /// Parse a URI string.
     pub fn parse(url: &str) -> Result<Self, crate::Status> {
         Ok(Self(PooledPtr::initialize(|pool| unsafe {
             let uri = pool.calloc::<apr_uri_t>();

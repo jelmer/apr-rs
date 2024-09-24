@@ -1,6 +1,10 @@
+//! Status codes and error handling.
+
+/// Status code type.
 pub type StatusCode = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(missing_docs)]
 pub enum Status {
     Success,                 // APR_SUCCESS
     NoStat,                  // APR_ENOSTAT
@@ -50,14 +54,17 @@ pub enum Status {
 }
 
 impl Status {
+    /// Check if this status represents a success
     pub fn is_success(&self) -> bool {
         matches!(self, Status::Success)
     }
 
+    /// Check if this status represents an error
     pub fn is_error(&self) -> bool {
         !self.is_success()
     }
 
+    /// Get the raw OS error code, if available
     pub fn raw_os_error(&self) -> Option<i32> {
         match self {
             Status::Success => None,
@@ -68,6 +75,7 @@ impl Status {
         }
     }
 
+    /// Get the error message for this status code
     pub fn strerror(&self) -> String {
         let buf = unsafe {
             let mut buf = [0u8; 1024];

@@ -1,5 +1,7 @@
+//! Memory pool management.
 use crate::generated;
 
+/// A memory pool.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Pool(*mut generated::apr_pool_t);
@@ -50,14 +52,17 @@ impl Pool {
         Pool(pool)
     }
 
+    /// Create a pool from a raw pointer.
     pub fn from_raw(ptr: *mut generated::apr_pool_t) -> Self {
         Pool(ptr)
     }
 
+    /// Get the raw pointer to the pool.
     pub unsafe fn as_ptr(&self) -> *const generated::apr_pool_t {
         self.0
     }
 
+    /// Get the raw mutable pointer to the pool.
     pub unsafe fn as_mut_ptr(&self) -> *mut generated::apr_pool_t {
         self.0
     }
@@ -81,6 +86,7 @@ impl Pool {
         }
     }
 
+    /// Allocate memory in the pool and zero it.
     #[allow(clippy::mut_from_ref)]
     pub fn calloc<T: Sized>(&self) -> &mut T {
         let size = std::mem::size_of::<T>();
@@ -151,6 +157,7 @@ impl Pool {
         }
     }
 
+    /// Try to join two pools.
     #[cfg(feature = "pool-debug")]
     pub fn join(&self, other: &Pool) {
         unsafe { generated::apr_pool_join(self.0, other.0) }
@@ -171,6 +178,7 @@ impl Pool {
         }
     }
 
+    /// Try to join two pools.
     #[cfg(not(feature = "pool-debug"))]
     pub fn join(&self, _other: &Pool) {}
 }
@@ -188,9 +196,12 @@ impl Drop for Pool {
         }
     }
 }
+
+/// An allocator.
 pub struct Allocator(*mut generated::apr_allocator_t);
 
 impl Allocator {
+    /// Create a new allocator.
     pub fn new() -> Self {
         let mut allocator: *mut generated::apr_allocator_t = std::ptr::null_mut();
         unsafe {
@@ -199,6 +210,7 @@ impl Allocator {
         Allocator(allocator)
     }
 
+    /// Return the raw pointer to the allocator.
     pub fn as_ptr(&self) -> *const generated::apr_allocator_t {
         self.0
     }
@@ -240,6 +252,7 @@ mod tests {
 /// A wrapper around a value that is allocated in a pool.
 pub struct Pooled<T> {
     pool: std::rc::Rc<Pool>,
+    /// The value.
     pub data: T,
 }
 
@@ -324,6 +337,7 @@ impl<T> PooledPtr<T> {
         PooledPtr { pool, data }
     }
 
+    /// Check if the pointer is null.
     pub fn is_null(&self) -> bool {
         self.data.is_null()
     }
