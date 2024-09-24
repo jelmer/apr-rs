@@ -61,13 +61,13 @@ impl<'pool> Option<'pool> {
         let description = description.map(|s| std::ffi::CString::new(s).unwrap());
 
         Self(
-            PooledPtr::initialize(|pool| unsafe {
+            PooledPtr::initialize(|pool| {
                 let option = pool.calloc::<crate::generated::apr_getopt_option_t>();
-                (*option).name = name.as_ptr() as *mut _;
-                (*option).has_arg = if has_arg { 1 } else { 0 };
-                (*option).optch = indicator.into();
+                option.name = name.as_ptr() as *mut _;
+                option.has_arg = if has_arg { 1 } else { 0 };
+                option.optch = indicator.into();
                 if let Some(description) = description {
-                    (*option).description = description.as_ptr() as *mut _;
+                    option.description = description.as_ptr() as *mut _;
                 }
                 Ok::<_, crate::Status>(option)
             })
@@ -177,7 +177,8 @@ impl Getopt {
     }
 
     pub fn getopt(&mut self, opts: impl IntoAllowedOptionChars) -> GetoptResult {
-        let mut opts: Vec<std::ffi::c_char> = opts.into_iter().map(|c| c as std::ffi::c_char).collect();
+        let mut opts: Vec<std::ffi::c_char> =
+            opts.into_iter().map(|c| c as std::ffi::c_char).collect();
         opts.push(0);
         let mut option_ch = 0;
         let mut option_arg: *const std::ffi::c_char = std::ptr::null_mut();

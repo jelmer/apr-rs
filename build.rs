@@ -7,7 +7,12 @@ fn create_bindings(
     apr_include_paths: &[&std::path::Path],
 ) {
     // Generate bindings using bindgen
-    let bindings = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default();
+    // check if the pool-debug feature is present
+    if std::env::var("CARGO_FEATURE_POOL_DEBUG").is_ok() {
+        builder = builder.clang_arg("-DAPR_POOL_DEBUG");
+    }
+    let bindings = builder
         .header(apr_path.join("apr.h").to_str().unwrap())
         .header(apr_path.join("apr_allocator.h").to_str().unwrap())
         .header(apr_path.join("apr_general.h").to_str().unwrap())

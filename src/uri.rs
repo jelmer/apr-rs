@@ -112,7 +112,7 @@ impl Uri {
     }
 
     pub fn unparse(&self, flags: u32) -> String {
-        let mut pool = crate::Pool::new();
+        let pool = crate::Pool::new();
         unsafe {
             CStr::from_ptr(crate::generated::apr_uri_unparse(
                 pool.as_mut_ptr(),

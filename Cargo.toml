@@ -18,6 +18,7 @@ url = { version = "2", optional = true }
 
 [features]
 url = ["dep:url"]
+pool-debug = []
 
 [build-dependencies]
 bindgen = ">=0.60"
