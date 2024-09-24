@@ -132,7 +132,10 @@ impl Pool {
     }
 
     /// Get the parent pool, if any.
-    pub fn parent(&self) -> Option<&Self> {
+    pub fn parent<'a, 'b>(&'a self) -> Option<&'b Self>
+    where
+        'b: 'a,
+    {
         let parent = unsafe { generated::apr_pool_parent_get(self.0) };
         if parent.is_null() {
             None
@@ -221,7 +224,8 @@ mod tests {
 
     #[test]
     fn test_pool() {
-        let mut pool = Pool::new();
+        let pool = Pool::new();
+        assert!(pool.parent().unwrap().is_ancestor(&pool));
         let parent = pool.parent();
         assert!(parent.unwrap().is_ancestor(&pool));
         let subpool = pool.subpool();
@@ -366,6 +370,11 @@ impl<T> std::fmt::Debug for PooledPtr<T> {
     }
 }
 
+/// Terminate the apr pool subsystem.
+///
+/// # Safety
+///
+/// This function is unsafe because it is possible to create a dangling pointer to memory that has been cleared.
 pub unsafe fn terminate() {
     unsafe {
         generated::apr_pool_terminate();
