@@ -1,21 +1,26 @@
 pub use crate::generated::{apr_array_header_t, apr_table_t};
 use crate::pool::PooledPtr;
 
+/// A wrapper around an `apr_array_header_t`.
 pub struct ArrayHeader<T: Sized>(PooledPtr<apr_array_header_t>, std::marker::PhantomData<T>);
 
 impl<T: Sized + Copy> ArrayHeader<T> {
+    /// Returns true if the array is empty.
     pub fn is_empty(&self) -> bool {
         unsafe { crate::generated::apr_is_empty_array(&*self.0) != 0 }
     }
 
+    /// Returns the number of elements in the array.
     pub fn len(&self) -> usize {
         self.0.nelts as usize
     }
 
+    /// Returns the number of elements that can be stored in the array without reallocating.
     pub fn allocated(&self) -> usize {
         self.0.nalloc as usize
     }
 
+    /// Create an empty ArrayHeader.
     pub fn new() -> Self {
         Self::new_with_capacity(0)
     }
@@ -34,6 +39,7 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         )
     }
 
+    /// Create an ArrayHeader from a pool and a number of elements.
     pub fn in_pool(pool: &std::rc::Rc<crate::Pool>, nelts: usize) -> Self {
         unsafe {
             let mut pool = pool.clone();
@@ -65,6 +71,7 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         )
     }
 
+    /// Return the element at the given index.
     pub fn nth(&self, index: usize) -> Option<T> {
         if index < self.len() {
             Some(unsafe { *self.nth_unchecked(index) })
@@ -73,14 +80,17 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         }
     }
 
+    /// Return a pointer to the element at the given index.
     unsafe fn nth_unchecked(&self, index: usize) -> *mut T {
         unsafe { self.0.elts.add(index * self.0.elt_size as usize) as *mut T }
     }
 
+    /// Return the size of each element in the array.
     pub fn element_size(&self) -> usize {
         self.0.elt_size as usize
     }
 
+    /// Push an element onto the end of the array.
     pub fn push(&mut self, item: T) {
         unsafe {
             let ptr = crate::generated::apr_array_push(&mut *self.0);
@@ -89,18 +99,21 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         }
     }
 
+    /// Clear the array
     pub fn clear(&mut self) {
         unsafe {
             crate::generated::apr_array_clear(&mut *self.0);
         }
     }
 
+    /// Concatenate two arrays.
     pub fn cat(&mut self, other: &ArrayHeader<T>) {
         unsafe {
             crate::generated::apr_array_cat(&mut *self.0, &*other.0);
         }
     }
 
+    /// Append two arrays.
     pub fn append(first: &ArrayHeader<T>, second: &ArrayHeader<T>) -> Self {
         unsafe {
             Self(
@@ -117,6 +130,7 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         }
     }
 
+    /// Copy the array.
     pub fn copy(&self) -> Self {
         unsafe {
             Self(
@@ -132,10 +146,12 @@ impl<T: Sized + Copy> ArrayHeader<T> {
         }
     }
 
+    /// Iterate over the entries in an array
     pub fn iter(&self) -> ArrayHeaderIterator<T> {
         ArrayHeaderIterator::new(self)
     }
 
+    /// Return a pointer to the underlying `apr_array_header_t`.
     pub fn as_ptr(&self) -> *const crate::generated::apr_array_header_t {
         self.0.as_ref()
     }
@@ -155,13 +171,14 @@ impl<T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<T> {
     }
 }
 
+/// An iterator over the elements of an `ArrayHeader`.
 pub struct ArrayHeaderIterator<'a, T: Sized> {
     array: &'a ArrayHeader<T>,
     index: usize,
 }
 
 impl<'a, T: Sized> ArrayHeaderIterator<'a, T> {
-    pub fn new(array: &'a ArrayHeader<T>) -> Self {
+    fn new(array: &'a ArrayHeader<T>) -> Self {
         Self { array, index: 0 }
     }
 }
@@ -209,16 +226,19 @@ impl<'pool> Clone for Table<'pool> {
 }
 
 impl<'pool> Table<'pool> {
+    /// Check if the table is empty.
     pub fn is_empty(&self) -> bool {
         unsafe { crate::generated::apr_is_empty_table(&*self.0) != 0 }
     }
 
+    /// Clear the table.
     pub fn clear(&mut self) {
         unsafe {
             crate::generated::apr_table_clear(&mut *self.0);
         }
     }
 
+    /// Create a new table, with space for nelts entries.
     pub fn new_with_capacity(nelts: usize) -> Self {
         unsafe {
             Self(
@@ -234,6 +254,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Return the item with the given key.
     pub fn get(&self, key: &str) -> Option<&str> {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
@@ -258,6 +279,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Set the value of a key.
     pub fn set(&mut self, key: &str, value: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
@@ -297,6 +319,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Add a key/value pair to the table.
     pub fn add(&mut self, key: &str, value: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
@@ -305,6 +328,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Overlay one table on top of another.
     pub fn overlay(overlay: &Table, base: &Table) -> Self {
         unsafe {
             Self(

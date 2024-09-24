@@ -1,14 +1,26 @@
+//! Date parsing functions
 use crate::generated::apr_date_checkmask;
 use crate::time::Time;
 
+/// Check if the given data matches the mask.
 pub fn checkmask(data: &str, mask: &str) -> bool {
-    let (data, mask) = (std::ffi::CString::new(data).unwrap(), std::ffi::CString::new(mask).unwrap());
-    unsafe { apr_date_checkmask(data.as_ptr() as *const std::ffi::c_char, mask.as_ptr() as *const std::ffi::c_char) != 0 }
+    let (data, mask) = (
+        std::ffi::CString::new(data).unwrap(),
+        std::ffi::CString::new(mask).unwrap(),
+    );
+    unsafe {
+        apr_date_checkmask(
+            data.as_ptr() as *const std::ffi::c_char,
+            mask.as_ptr() as *const std::ffi::c_char,
+        ) != 0
+    }
 }
 
+/// Parse the given data as an HTTP date.
 pub fn parse_http(data: &str) -> Option<Time> {
     let data = std::ffi::CString::new(data).unwrap();
-    let rv = unsafe { crate::generated::apr_date_parse_http(data.as_ptr() as *const std::ffi::c_char) };
+    let rv =
+        unsafe { crate::generated::apr_date_parse_http(data.as_ptr() as *const std::ffi::c_char) };
     if rv == 0 {
         None
     } else {
@@ -16,9 +28,11 @@ pub fn parse_http(data: &str) -> Option<Time> {
     }
 }
 
+/// Parse the given data as an RFC3339 date.
 pub fn parse_rfc(data: &str) -> Option<Time> {
     let data = std::ffi::CString::new(data).unwrap();
-    let rv = unsafe { crate::generated::apr_date_parse_rfc(data.as_ptr() as *const std::ffi::c_char) };
+    let rv =
+        unsafe { crate::generated::apr_date_parse_rfc(data.as_ptr() as *const std::ffi::c_char) };
     if rv == 0 {
         None
     } else {

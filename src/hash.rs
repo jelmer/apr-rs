@@ -1,10 +1,14 @@
+//! Hash map implementation.
 pub use crate::generated::apr_hash_t;
 use crate::pool::{Pool, PooledPtr};
 use std::marker::PhantomData;
 
+/// A hash map.
 pub struct Hash<'pool, K: IntoHashKey<'pool>, V>(PooledPtr<apr_hash_t>, PhantomData<(K, &'pool V)>);
 
+/// A trait for types that can be used as keys in a hash map.
 pub trait IntoHashKey<'pool> {
+    /// Convert the value into a byte slice that can be used as a key in a hash map.
     fn into_hash_key(self) -> &'pool [u8];
 }
 
@@ -51,6 +55,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
         }
     }
 
+    /// Create a new hash map from a raw pointer.
     pub fn from_raw(raw: PooledPtr<apr_hash_t>) -> Self {
         Self(raw, PhantomData)
     }
@@ -139,11 +144,13 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
         )
     }
 
-    pub fn as_ptr(&self) -> *const apr_hash_t {
+    /// Return a pointer to the underlying apr_hash_t.
+    pub unsafe fn as_ptr(&self) -> *const apr_hash_t {
         &*self.0
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut apr_hash_t {
+    /// Return a mutable pointer to the underlying apr_hash_t.
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_hash_t {
         &mut *self.0
     }
 }
@@ -154,6 +161,7 @@ impl<'pool> Default for Hash<'pool, &'pool str, &'pool str> {
     }
 }
 
+/// An iterator over the key-value pairs of a hash map.
 pub struct Iter<'pool, V>(
     PooledPtr<crate::generated::apr_hash_index_t>,
     PhantomData<&'pool V>,
@@ -191,6 +199,7 @@ where
     }
 }
 
+/// An iterator over the keys of a hash map.
 pub struct Keys<'pool>(
     PooledPtr<crate::generated::apr_hash_index_t>,
     PhantomData<&'pool [u8]>,
@@ -216,6 +225,7 @@ impl<'pool> Iterator for Keys<'pool> {
     }
 }
 
+/// Generate a hash for a key with the default hash function.
 pub fn hash_default(key: &[u8]) -> u32 {
     unsafe {
         let mut len = key.len() as crate::generated::apr_ssize_t;

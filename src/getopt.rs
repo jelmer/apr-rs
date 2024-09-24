@@ -1,30 +1,40 @@
+//! Command line option parsing.
 use crate::pool::PooledPtr;
 
+/// A trait for types that can be converted into a sequence of allowed option characters.
 pub trait IntoAllowedOptionChars {
-    fn into_iter(self) -> std::vec::IntoIter<char>;
+    /// Converts the value into an iterator of characters that are allowed as options.
+    fn into_iter(self) -> impl Iterator<Item = char>;
 }
 
 impl IntoAllowedOptionChars for &str {
-    fn into_iter(self) -> std::vec::IntoIter<char> {
+    fn into_iter(self) -> impl std::iter::Iterator<Item = char> {
         self.chars().collect::<Vec<_>>().into_iter()
     }
 }
 
 impl IntoAllowedOptionChars for &[char] {
-    fn into_iter(self) -> std::vec::IntoIter<char> {
-        self.to_vec().into_iter()
+    fn into_iter(self) -> impl std::iter::Iterator<Item = char> {
+        self.iter().copied()
     }
 }
 
+/// A command line option.
 pub struct Option<'pool>(
     PooledPtr<crate::generated::apr_getopt_option_t>,
     std::marker::PhantomData<&'pool ()>,
 );
 
+/// An indicator for a command line option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Indicator {
+    /// A sentinel value.
     Sentinel,
+
+    /// A single letter.
     Letter(char),
+
+    /// An identifier.
     Identifier(i32),
 }
 
@@ -51,6 +61,7 @@ impl From<i32> for Indicator {
 }
 
 impl<'pool> Option<'pool> {
+    /// Create a new option.
     pub fn new(
         name: &str,
         has_arg: bool,
@@ -99,6 +110,7 @@ impl<'pool> Option<'pool> {
         }
     }
 
+    /// Returns the description of the option.
     pub fn description(&self) -> &str {
         unsafe {
             let description = self.0.description;
@@ -106,25 +118,37 @@ impl<'pool> Option<'pool> {
         }
     }
 
+    /// Returns the pointer to the underlying `apr_getopt_option_t` structure.
     pub fn as_ptr(&self) -> *const crate::generated::apr_getopt_option_t {
         self.0.as_ptr()
     }
 
+    /// Returns the mutable pointer to the underlying `apr_getopt_option_t` structure.
     pub fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_getopt_option_t {
         self.0.as_mut_ptr()
     }
 }
 
+/// A command line option parser.
 pub struct Getopt(PooledPtr<crate::generated::apr_getopt_t>);
 
+/// The result of parsing a command line option.
 pub enum GetoptResult {
+    /// An option.
     Option(Indicator, std::option::Option<String>),
+
+    /// A missing argument.
     MissingArgument(char),
+
+    /// A bad option.
     BadOption(char),
+
+    /// The end of options.
     End,
 }
 
 impl Getopt {
+    /// Create a new `Getopt` instance.
     pub fn new(args: &[&str]) -> Result<Self, crate::Status> {
         PooledPtr::initialize(|pool| unsafe {
             let mut os = std::ptr::null_mut();
@@ -154,6 +178,7 @@ impl Getopt {
         .map(Self)
     }
 
+    /// Return the arguments.
     pub fn args(&self) -> Vec<&str> {
         unsafe {
             let args = self.0.argv;
@@ -164,18 +189,22 @@ impl Getopt {
         }
     }
 
+    /// Allow interleaving of options and arguments.
     pub fn allow_interleaving(&mut self, allow: bool) {
         self.0.interleave = if allow { 1 } else { 0 };
     }
 
+    /// Skip the first `skip` arguments.
     pub fn skip_start(&mut self, skip: i32) {
         self.0.skip_start = skip;
     }
 
+    /// Skip the last `skip` arguments.
     pub fn skip_end(&mut self, skip: i32) {
         self.0.skip_end = skip;
     }
 
+    /// Parse a command line option.
     pub fn getopt(&mut self, opts: impl IntoAllowedOptionChars) -> GetoptResult {
         let mut opts: Vec<std::ffi::c_char> =
             opts.into_iter().map(|c| c as std::ffi::c_char).collect();
@@ -214,6 +243,7 @@ impl Getopt {
         }
     }
 
+    /// Parse a long command line option.
     pub fn getopt_long(&mut self, opts: &[Option]) -> GetoptResult {
         let mut option_ch: i32 = 0;
         let mut option_arg: *const std::ffi::c_char = std::ptr::null();
@@ -260,10 +290,12 @@ impl Getopt {
         }
     }
 
+    /// Return ptr to the underlying `apr_getopt_t` structure.
     pub fn as_ptr(&self) -> *const crate::generated::apr_getopt_t {
         self.0.as_ptr()
     }
 
+    /// Return mutable ptr to the underlying `apr_getopt_t` structure.
     pub fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_getopt_t {
         self.0.as_mut_ptr()
     }
