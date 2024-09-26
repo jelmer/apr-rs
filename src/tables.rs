@@ -153,7 +153,11 @@ impl<T: Sized + Copy> ArrayHeader<T> {
 
     /// Return a pointer to the underlying `apr_array_header_t`.
     pub fn as_ptr(&self) -> *const crate::generated::apr_array_header_t {
-        self.0.as_ref()
+        self.0.as_ptr()
+    }
+
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_array_header_t {
+        self.0.as_mut_ptr()
     }
 }
 
