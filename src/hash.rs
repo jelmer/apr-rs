@@ -1,10 +1,13 @@
 //! Hash map implementation.
 pub use crate::generated::apr_hash_t;
-use crate::pool::{Pool, PooledPtr};
+use crate::pool::{Pool, Pooled};
 use std::marker::PhantomData;
 
 /// A hash map.
-pub struct Hash<'pool, K: IntoHashKey<'pool>, V>(PooledPtr<apr_hash_t>, PhantomData<(K, &'pool V)>);
+pub struct Hash<'pool, K: IntoHashKey<'pool>, V>(
+    Pooled<'pool, apr_hash_t>,
+    PhantomData<(K, &'pool V)>,
+);
 
 /// A trait for types that can be used as keys in a hash map.
 pub trait IntoHashKey<'pool> {
@@ -24,40 +27,27 @@ impl<'pool> IntoHashKey<'pool> for &'pool str {
     }
 }
 
-impl<'pool, K: IntoHashKey<'pool>, V> Clone for Hash<'pool, K, V> {
-    fn clone(&self) -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_hash_copy(
-                        pool.as_mut_ptr(),
-                        &*self.0,
-                    ))
-                })
-                .unwrap(),
-                PhantomData,
-            )
-        }
-    }
-}
-
 impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     /// Create a new hash map in the current pool.
-    pub fn new() -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_hash_make(pool.as_mut_ptr()))
-                })
-                .unwrap(),
-                PhantomData,
-            )
-        }
+    pub fn new(pool: &'pool Pool) -> Self {
+        Self::from_ptr(Pooled::from_ptr(unsafe {
+            crate::generated::apr_hash_make(pool.as_mut_ptr())
+        }))
     }
 
     /// Create a new hash map from a raw pointer.
-    pub fn from_raw(raw: PooledPtr<apr_hash_t>) -> Self {
+    pub fn from_ptr(raw: Pooled<'pool, apr_hash_t>) -> Self {
         Self(raw, PhantomData)
+    }
+
+    pub fn copy<'newpool, NK: IntoHashKey<'newpool>>(
+        &self,
+        pool: &'newpool Pool,
+    ) -> Result<Hash<'newpool, NK, V>, crate::Status> {
+        unsafe {
+            let data = crate::generated::apr_hash_copy(pool.as_mut_ptr(), self.as_ptr());
+            Ok(Hash(Pooled::from_ptr(data), PhantomData))
+        }
     }
 
     /// Create a new hash map in the given pool.
@@ -67,7 +57,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
             let data = crate::generated::apr_hash_make(
                 std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
             );
-            Self(PooledPtr::in_pool(pool, data), PhantomData)
+            Self(Pooled::from_ptr(data), PhantomData)
         }
     }
 
@@ -117,31 +107,17 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     }
 
     /// Returns an iterator over the key-value pairs of the hash map.
-    pub fn iter(&mut self) -> Iter<'pool, V> {
-        Iter(
-            PooledPtr::initialize(|pool| unsafe {
-                Ok::<_, crate::Status>(crate::generated::apr_hash_first(
-                    pool.as_mut_ptr(),
-                    &mut *self.0,
-                ))
-            })
-            .unwrap(),
-            PhantomData,
-        )
+    pub fn iter<'newpool>(&mut self, pool: &'newpool Pool) -> Iter<'newpool, V> {
+        let first =
+            unsafe { crate::generated::apr_hash_first(pool.as_mut_ptr(), self.0.as_mut_ptr()) };
+        Iter(Pooled::option_from_ptr(first), PhantomData)
     }
 
     /// Returns an iterator over the keys of the hash map.
-    pub fn keys(&mut self) -> Keys<'pool> {
-        Keys(
-            PooledPtr::initialize(|pool| unsafe {
-                Ok::<_, crate::Status>(crate::generated::apr_hash_first(
-                    pool.as_mut_ptr(),
-                    &mut *self.0,
-                ))
-            })
-            .unwrap(),
-            PhantomData,
-        )
+    pub fn keys<'newpool>(&mut self, pool: &'newpool Pool) -> Keys<'newpool> {
+        let first =
+            unsafe { crate::generated::apr_hash_first(pool.as_mut_ptr(), self.0.as_mut_ptr()) };
+        Keys(Pooled::option_from_ptr(first), PhantomData)
     }
 
     /// Return a pointer to the underlying apr_hash_t.
@@ -155,15 +131,9 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     }
 }
 
-impl<'pool> Default for Hash<'pool, &'pool str, &'pool str> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// An iterator over the key-value pairs of a hash map.
 pub struct Iter<'pool, V>(
-    PooledPtr<crate::generated::apr_hash_index_t>,
+    Option<Pooled<'pool, crate::generated::apr_hash_index_t>>,
     PhantomData<&'pool V>,
 );
 
@@ -174,24 +144,22 @@ where
     type Item = (&'pool [u8], &'pool V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.0.is_null() {
-            return None;
-        }
+        self.0.as_ref()?;
         let mut key = std::ptr::null();
         let mut key_len = 0;
         let mut val = std::ptr::null_mut();
         unsafe {
             crate::generated::apr_hash_this(
-                &mut *self.0,
+                self.0.as_mut().unwrap().as_mut_ptr(),
                 &mut key,
                 &mut key_len,
                 &mut val as *mut *mut std::ffi::c_void,
             );
         }
 
-        self.0 = unsafe {
-            PooledPtr::in_pool(self.0.pool(), crate::generated::apr_hash_next(&mut *self.0))
-        };
+        self.0 = Pooled::option_from_ptr(unsafe {
+            crate::generated::apr_hash_next(self.0.as_mut().unwrap().as_mut_ptr())
+        });
 
         let key = unsafe { std::slice::from_raw_parts(key as *const u8, key_len as usize) };
 
@@ -201,7 +169,7 @@ where
 
 /// An iterator over the keys of a hash map.
 pub struct Keys<'pool>(
-    PooledPtr<crate::generated::apr_hash_index_t>,
+    Option<Pooled<'pool, crate::generated::apr_hash_index_t>>,
     PhantomData<&'pool [u8]>,
 );
 
@@ -209,15 +177,16 @@ impl<'pool> Iterator for Keys<'pool> {
     type Item = &'pool [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.0.is_null() {
-            return None;
-        }
-        let key = unsafe { crate::generated::apr_hash_this_key(&mut *self.0) };
-        let key_len = unsafe { crate::generated::apr_hash_this_key_len(&mut *self.0) };
-
-        self.0 = unsafe {
-            PooledPtr::in_pool(self.0.pool(), crate::generated::apr_hash_next(&mut *self.0))
+        self.0.as_ref()?;
+        let key =
+            unsafe { crate::generated::apr_hash_this_key(self.0.as_mut().unwrap().as_mut_ptr()) };
+        let key_len = unsafe {
+            crate::generated::apr_hash_this_key_len(self.0.as_mut().unwrap().as_mut_ptr())
         };
+
+        self.0 = Pooled::option_from_ptr(unsafe {
+            crate::generated::apr_hash_next(self.0.as_mut().unwrap().as_mut_ptr())
+        });
 
         let key = unsafe { std::slice::from_raw_parts(key as *const u8, key_len as usize) };
 
@@ -233,18 +202,9 @@ pub fn hash_default(key: &[u8]) -> u32 {
     }
 }
 
-impl<'pool, K: IntoHashKey<'pool>, V> FromIterator<(K, V)> for Hash<'pool, K, V> {
-    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
-        let mut hash = Self::new();
-        for (k, v) in iter {
-            hash.set(k, &v);
-        }
-        hash
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn test_hash_default() {
         assert_eq!(super::hash_default(b"foo"), super::hash_default(b"foo"));
@@ -253,26 +213,28 @@ mod tests {
 
     #[test]
     fn test_hash() {
-        let mut hash = super::Hash::new();
+        let pool = Pool::new();
+        let mut hash = super::Hash::new(&pool);
         assert!(hash.is_empty());
         assert!(hash.get("foo").is_none());
         hash.set("foo", &"bar");
         assert!(!hash.is_empty());
         assert_eq!(hash.get("foo"), Some(&"bar"));
-        let items = hash.iter().collect::<Vec<_>>();
+        let items = hash.iter(&pool).collect::<Vec<_>>();
         assert_eq!(items.len(), 1);
         assert_eq!(hash.len(), 1);
         assert_eq!(items[0], (&b"foo"[..], &"bar"));
-        assert_eq!(hash.keys().collect::<Vec<_>>(), vec![&b"foo"[..]]);
+        assert_eq!(hash.keys(&pool).collect::<Vec<_>>(), vec![&b"foo"[..]]);
         hash.clear();
         assert!(hash.is_empty());
     }
 
     #[test]
     fn test_clone() {
-        let mut hash = super::Hash::new();
+        let pool = Pool::new();
+        let mut hash = super::Hash::new(&pool);
         hash.set("foo", &"bar");
-        let mut hash2 = hash.clone();
+        let mut hash2 = hash.copy(&pool).unwrap();
         assert_eq!(hash2.get("foo"), Some(&"bar"));
     }
 }

@@ -1,10 +1,13 @@
 pub use crate::generated::{apr_array_header_t, apr_table_t};
-use crate::pool::PooledPtr;
+use crate::pool::{Pool, Pooled};
 
 /// A wrapper around an `apr_array_header_t`.
-pub struct ArrayHeader<T: Sized>(PooledPtr<apr_array_header_t>, std::marker::PhantomData<T>);
+pub struct ArrayHeader<'pool, T: Sized>(
+    Pooled<'pool, apr_array_header_t>,
+    std::marker::PhantomData<T>,
+);
 
-impl<T: Sized + Copy> ArrayHeader<T> {
+impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     /// Returns true if the array is empty.
     pub fn is_empty(&self) -> bool {
         unsafe { crate::generated::apr_is_empty_array(&*self.0) != 0 }
@@ -21,54 +24,24 @@ impl<T: Sized + Copy> ArrayHeader<T> {
     }
 
     /// Create an empty ArrayHeader.
-    pub fn new() -> Self {
-        Self::new_with_capacity(0)
+    pub fn new(pool: &'pool Pool) -> Self {
+        Self::new_with_capacity(pool, 0)
     }
 
-    pub fn new_with_capacity(nelts: usize) -> Self {
-        Self(
-            crate::pool::PooledPtr::initialize(|pool| unsafe {
-                Ok::<_, crate::Status>(crate::generated::apr_array_make(
-                    pool.as_mut_ptr(),
-                    nelts as i32,
-                    std::mem::size_of::<T>() as i32,
-                ))
-            })
-            .unwrap(),
-            std::marker::PhantomData,
-        )
-    }
-
-    /// Create an ArrayHeader from a pool and a number of elements.
-    pub fn in_pool(pool: &std::rc::Rc<crate::Pool>, nelts: usize) -> Self {
-        unsafe {
-            let mut pool = pool.clone();
-            let hdr = crate::generated::apr_array_make(
-                std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
+    pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self {
+        let array = Pooled::from_ptr(unsafe {
+            crate::generated::apr_array_make(
+                pool.as_mut_ptr(),
                 nelts as i32,
                 std::mem::size_of::<T>() as i32,
-            );
-
-            Self(
-                crate::pool::PooledPtr::in_pool(pool, hdr),
-                std::marker::PhantomData,
             )
-        }
+        });
+
+        Self(array, std::marker::PhantomData)
     }
 
-    /// Create an ArrayHeader from a raw pointer.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the pointer is valid and that the memory is owned by the pool.
-    pub unsafe fn from_raw_parts(
-        pool: &std::rc::Rc<crate::Pool>,
-        raw: *mut apr_array_header_t,
-    ) -> Self {
-        Self(
-            crate::pool::PooledPtr::in_pool(pool.clone(), raw),
-            std::marker::PhantomData,
-        )
+    pub fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
+        Self(Pooled::from_ptr(ptr), std::marker::PhantomData)
     }
 
     /// Return the element at the given index.
@@ -114,36 +87,27 @@ impl<T: Sized + Copy> ArrayHeader<T> {
     }
 
     /// Append two arrays.
-    pub fn append(first: &ArrayHeader<T>, second: &ArrayHeader<T>) -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_array_append(
-                        pool.as_mut_ptr(),
-                        &*first.0,
-                        &*second.0,
-                    ))
-                })
-                .unwrap(),
-                std::marker::PhantomData,
-            )
-        }
+    pub fn append<'newpool>(
+        pool: &'newpool Pool,
+        first: &ArrayHeader<T>,
+        second: &ArrayHeader<T>,
+    ) -> ArrayHeader<'newpool, T> {
+        ArrayHeader(
+            Pooled::from_ptr(unsafe {
+                crate::generated::apr_array_append(pool.as_mut_ptr(), &*first.0, &*second.0)
+            }),
+            std::marker::PhantomData,
+        )
     }
 
     /// Copy the array.
-    pub fn copy(&self) -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_array_copy(
-                        pool.as_mut_ptr(),
-                        &*self.0,
-                    ))
-                })
-                .unwrap(),
-                std::marker::PhantomData,
-            )
-        }
+    pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> ArrayHeader<'newpool, T> {
+        ArrayHeader(
+            Pooled::from_ptr(unsafe {
+                crate::generated::apr_array_copy(pool.as_mut_ptr(), &*self.0)
+            }),
+            std::marker::PhantomData,
+        )
     }
 
     /// Iterate over the entries in an array
@@ -161,13 +125,7 @@ impl<T: Sized + Copy> ArrayHeader<T> {
     }
 }
 
-impl<T: Sized + Copy> Default for ArrayHeader<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<T> {
+impl<'pool, T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<'pool, T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -176,13 +134,13 @@ impl<T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<T> {
 }
 
 /// An iterator over the elements of an `ArrayHeader`.
-pub struct ArrayHeaderIterator<'a, T: Sized> {
-    array: &'a ArrayHeader<T>,
+pub struct ArrayHeaderIterator<'pool, T: Sized> {
+    array: &'pool ArrayHeader<'pool, T>,
     index: usize,
 }
 
-impl<'a, T: Sized> ArrayHeaderIterator<'a, T> {
-    fn new(array: &'a ArrayHeader<T>) -> Self {
+impl<'pool, T: Sized> ArrayHeaderIterator<'pool, T> {
+    fn new(array: &'pool ArrayHeader<T>) -> Self {
         Self { array, index: 0 }
     }
 }
@@ -200,39 +158,20 @@ impl<'a, T: Sized + Copy> Iterator for ArrayHeaderIterator<'a, T> {
     }
 }
 
-impl<T: Sized + Copy> FromIterator<T> for ArrayHeader<T> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut array = ArrayHeader::new();
-        for item in iter {
-            array.push(item);
-        }
-        array
-    }
-}
-
-pub struct Table<'pool>(PooledPtr<apr_table_t>, std::marker::PhantomData<&'pool ()>);
-
-impl<'pool> Clone for Table<'pool> {
-    fn clone(&self) -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_table_copy(
-                        pool.as_mut_ptr(),
-                        &*self.0,
-                    ))
-                })
-                .unwrap(),
-                std::marker::PhantomData,
-            )
-        }
-    }
-}
+pub struct Table<'pool>(
+    Pooled<'pool, apr_table_t>,
+    std::marker::PhantomData<&'pool ()>,
+);
 
 impl<'pool> Table<'pool> {
     /// Check if the table is empty.
     pub fn is_empty(&self) -> bool {
         unsafe { crate::generated::apr_is_empty_table(&*self.0) != 0 }
+    }
+
+    pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> Table<'newpool> {
+        let newtable = unsafe { crate::generated::apr_table_copy(pool.as_mut_ptr(), &*self.0) };
+        Table(Pooled::from_ptr(newtable), std::marker::PhantomData)
     }
 
     /// Clear the table.
@@ -243,19 +182,9 @@ impl<'pool> Table<'pool> {
     }
 
     /// Create a new table, with space for nelts entries.
-    pub fn new_with_capacity(nelts: usize) -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_table_make(
-                        pool.as_mut_ptr(),
-                        nelts as i32,
-                    ))
-                })
-                .unwrap(),
-                std::marker::PhantomData,
-            )
-        }
+    pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self {
+        let ret = unsafe { crate::generated::apr_table_make(pool.as_mut_ptr(), nelts as i32) };
+        Self(Pooled::from_ptr(ret), std::marker::PhantomData)
     }
 
     /// Return the item with the given key.
@@ -333,20 +262,15 @@ impl<'pool> Table<'pool> {
     }
 
     /// Overlay one table on top of another.
-    pub fn overlay(overlay: &Table, base: &Table) -> Self {
-        unsafe {
-            Self(
-                PooledPtr::initialize(|pool| {
-                    Ok::<_, crate::Status>(crate::generated::apr_table_overlay(
-                        pool.as_mut_ptr(),
-                        &*overlay.0,
-                        &*base.0,
-                    ))
-                })
-                .unwrap(),
-                std::marker::PhantomData,
-            )
-        }
+    pub fn overlay<'newpool>(
+        pool: &'newpool Pool,
+        overlay: &Table,
+        base: &Table,
+    ) -> Table<'newpool> {
+        let new_table = unsafe {
+            crate::generated::apr_table_overlay(pool.as_mut_ptr(), &*overlay.0, &*base.0)
+        };
+        Table(Pooled::from_ptr(new_table), std::marker::PhantomData)
     }
 }
 
@@ -354,7 +278,8 @@ impl<'pool> Table<'pool> {
 mod tests {
     #[test]
     fn test_ints() {
-        let mut array = super::ArrayHeader::new();
+        let pool = crate::pool::Pool::new();
+        let mut array = super::ArrayHeader::new(&pool);
         array.push(1);
         array.push(2);
         array.push(3);
@@ -375,7 +300,8 @@ mod tests {
 
     #[test]
     fn test_strings() {
-        let mut array = super::ArrayHeader::new();
+        let pool = crate::pool::Pool::new();
+        let mut array = super::ArrayHeader::new(&pool);
         array.push("1");
         array.push("2");
         array.push("3");
@@ -392,7 +318,8 @@ mod tests {
 
     #[test]
     fn test_convert() {
-        let mut array = super::ArrayHeader::new();
+        let pool = crate::pool::Pool::new();
+        let mut array = super::ArrayHeader::new(&pool);
         array.push("1");
         array.push("2");
         array.push("3");

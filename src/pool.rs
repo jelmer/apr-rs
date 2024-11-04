@@ -58,12 +58,12 @@ impl Pool {
     }
 
     /// Get the raw pointer to the pool.
-    pub unsafe fn as_ptr(&self) -> *const generated::apr_pool_t {
+    pub fn as_ptr(&self) -> *const generated::apr_pool_t {
         self.0
     }
 
     /// Get the raw mutable pointer to the pool.
-    pub unsafe fn as_mut_ptr(&self) -> *mut generated::apr_pool_t {
+    pub fn as_mut_ptr(&self) -> *mut generated::apr_pool_t {
         self.0
     }
 
@@ -78,22 +78,28 @@ impl Pool {
 
     #[allow(clippy::mut_from_ref)]
     /// Allocate memory in the pool.
-    pub fn alloc<T: Sized>(&self) -> &mut std::mem::MaybeUninit<T> {
+    pub fn alloc<T: Sized>(&self) -> Pooled<'_, std::mem::MaybeUninit<T>> {
         let size = std::mem::size_of::<T>();
         unsafe {
             let x = generated::apr_palloc(self.0, size) as *mut std::mem::MaybeUninit<T>;
-            &mut *x
+            Pooled {
+                ptr: x,
+                _marker: std::marker::PhantomData,
+            }
         }
     }
 
     /// Allocate memory in the pool and zero it.
     #[allow(clippy::mut_from_ref)]
-    pub fn calloc<T: Sized>(&self) -> &mut T {
+    pub fn calloc<T: Sized>(&self) -> Pooled<'_, T> {
         let size = std::mem::size_of::<T>();
         unsafe {
             let x = generated::apr_palloc(self.0, size) as *mut T;
             std::ptr::write_bytes(x as *mut u8, 0, size);
-            &mut *x
+            Pooled {
+                ptr: x,
+                _marker: std::marker::PhantomData,
+            }
         }
     }
 
@@ -230,6 +236,102 @@ impl Drop for Allocator {
     }
 }
 
+pub struct Pooled<'a, T> {
+    ptr: *mut T,
+    _marker: std::marker::PhantomData<&'a Pool>,
+}
+
+impl<T> Pooled<'_, T> {
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.ptr
+    }
+
+    pub fn from_ptr(ptr: *mut T) -> Self {
+        assert!(!ptr.is_null());
+        Pooled {
+            ptr,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn option_from_ptr(ptr: *mut T) -> Option<Self> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Pooled {
+                ptr,
+                _marker: std::marker::PhantomData,
+            })
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Pooled<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl<T> std::ops::DerefMut for Pooled<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+pub struct OwnedPooled<T> {
+    ptr: *mut T,
+    pool: std::rc::Rc<Pool>,
+}
+
+impl<T> OwnedPooled<T> {
+    pub fn new(pool: std::rc::Rc<Pool>, ptr: *mut T) -> Self {
+        OwnedPooled { ptr, pool }
+    }
+
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.ptr
+    }
+
+    pub fn pool(&self) -> std::rc::Rc<Pool> {
+        self.pool.clone()
+    }
+}
+
+impl<T> std::ops::Deref for OwnedPooled<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl<T> std::ops::DerefMut for OwnedPooled<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+/// Terminate the apr pool subsystem.
+///
+/// # Safety
+///
+/// This function is unsafe because it is possible to create a dangling pointer to memory that has been cleared.
+pub unsafe fn terminate() {
+    unsafe {
+        generated::apr_pool_terminate();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,160 +348,5 @@ mod tests {
         assert!(subpool.parent().unwrap().is_ancestor(&subpool));
         subpool.tag("subpool");
         pool.tag("pool");
-    }
-}
-
-/// A wrapper around a value that is allocated in a pool.
-pub struct Pooled<T> {
-    pool: std::rc::Rc<Pool>,
-    /// The value.
-    pub data: T,
-}
-
-impl<T> Pooled<T> {
-    /// Create a pooled value, using the given closure to initialize it.
-    pub fn initialize<E: std::error::Error>(
-        cb: impl FnOnce(&mut Pool) -> Result<T, E>,
-    ) -> Result<Self, E> {
-        let mut pool = std::rc::Rc::new(Pool::new());
-        let data = cb(std::rc::Rc::get_mut(&mut pool).as_mut().unwrap())?;
-        Ok(Pooled { pool, data })
-    }
-
-    /// Create a pooled value from a value allocated in a pool.
-    ///
-    /// # Safety
-    ///
-    /// The data must be allocated in the pool.
-    pub unsafe fn in_pool(pool: std::rc::Rc<Pool>, data: T) -> Self {
-        // Assert that the data is allocated in the pool.
-        Pooled { pool, data }
-    }
-
-    /// Get a reference to the pool that the value is allocated in.
-    pub fn pool(&self) -> std::rc::Rc<Pool> {
-        self.pool.clone()
-    }
-}
-
-impl<T> AsRef<T> for Pooled<T> {
-    fn as_ref(&self) -> &T {
-        &self.data
-    }
-}
-
-impl<T> std::ops::Deref for Pooled<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl<T> std::ops::DerefMut for Pooled<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
-    }
-}
-
-impl<T: std::fmt::Debug> std::fmt::Debug for Pooled<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pooled")
-            .field("pool", &self.pool)
-            .field("data", &self.data)
-            .finish()
-    }
-}
-
-/// A wrapper around a pointer to a value that is allocated in a pool.
-pub struct PooledPtr<T> {
-    pool: std::rc::Rc<Pool>,
-    data: *mut T,
-}
-
-impl<T> PooledPtr<T> {
-    /// Create a pooled value, using the given closure to initialize it.
-    pub fn initialize<E: std::error::Error>(
-        cb: impl FnOnce(&mut Pool) -> Result<*mut T, E>,
-    ) -> Result<Self, E> {
-        let mut pool = std::rc::Rc::new(Pool::new());
-        let data = cb(std::rc::Rc::get_mut(&mut pool).as_mut().unwrap())?;
-        Ok(PooledPtr { pool, data })
-    }
-
-    /// Create a pooled value from a value allocated in a pool.
-    ///
-    /// # Safety
-    ///
-    /// The data must be allocated in the pool.
-    pub unsafe fn in_pool(pool: std::rc::Rc<Pool>, data: *mut T) -> Self {
-        // TODO: Assert that the data is allocated in the pool.
-        PooledPtr { pool, data }
-    }
-
-    /// Check if the pointer is null.
-    pub fn is_null(&self) -> bool {
-        self.data.is_null()
-    }
-
-    /// Get a reference to the pool that the value is allocated in.
-    pub fn pool(&self) -> std::rc::Rc<Pool> {
-        self.pool.clone()
-    }
-
-    pub fn as_ptr(&self) -> *const T {
-        self.data
-    }
-
-    pub fn as_mut_ptr(&mut self) -> *mut T {
-        self.data
-    }
-}
-
-impl<T> AsRef<T> for PooledPtr<T> {
-    fn as_ref(&self) -> &T {
-        unsafe { &*self.data }
-    }
-}
-impl<T> std::ops::Deref for PooledPtr<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.data }
-    }
-}
-
-impl<T> std::ops::DerefMut for PooledPtr<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.data }
-    }
-}
-
-impl<T> std::fmt::Debug for PooledPtr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PooledPtr")
-            .field("pool", &self.pool)
-            .field("data", &self.data)
-            .finish()
-    }
-}
-
-/// Terminate the apr pool subsystem.
-///
-/// # Safety
-///
-/// This function is unsafe because it is possible to create a dangling pointer to memory that has been cleared.
-pub unsafe fn terminate() {
-    unsafe {
-        generated::apr_pool_terminate();
-    }
-}
-
-#[cfg(test)]
-mod pooled_tests {
-    #[test]
-    fn test_pooled() {
-        let pooled = super::Pooled::initialize(|_pool| Ok::<_, std::io::Error>(1)).unwrap();
-        assert_eq!(*pooled, 1);
     }
 }
