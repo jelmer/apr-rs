@@ -1,12 +1,12 @@
 //! URI parsing and manipulation.
 pub use crate::generated::apr_uri_t;
-use crate::pool::PooledPtr;
+use crate::pool::{Pool, Pooled};
 use std::ffi::CStr;
 
 /// A structure to represent a URI.
-pub struct Uri(PooledPtr<apr_uri_t>);
+pub struct Uri<'pool>(Pooled<'pool, apr_uri_t>);
 
-impl Uri {
+impl<'pool> Uri<'pool> {
     /// Return the scheme of the URI.
     pub fn scheme(&self) -> Option<&str> {
         unsafe {
@@ -142,49 +142,41 @@ impl Uri {
     }
 
     /// Parse a hostinfo string.
-    pub fn parse_hostinfo(hostinfo: &str) -> Result<Self, crate::Status> {
-        Ok(Self(PooledPtr::initialize(|pool| unsafe {
-            let uri = pool.calloc::<apr_uri_t>();
-            let hostinfo = std::ffi::CString::new(hostinfo).unwrap();
-            let status = crate::generated::apr_uri_parse_hostinfo(
+    pub fn parse_hostinfo(pool: &'pool Pool, hostinfo: &str) -> Result<Self, crate::Status> {
+        let mut uri = pool.calloc::<apr_uri_t>();
+        let hostinfo = std::ffi::CString::new(hostinfo).unwrap();
+        let status = unsafe {
+            crate::generated::apr_uri_parse_hostinfo(
                 pool.as_mut_ptr(),
                 hostinfo.as_ptr() as *const std::ffi::c_char,
-                uri as *mut _ as *mut _,
-            );
-            let status = crate::Status::from(status);
-            if status.is_success() {
-                Ok(uri)
-            } else {
-                Err(status)
-            }
-        })?))
+                uri.as_mut_ptr(),
+            )
+        };
+        let status = crate::Status::from(status);
+        if status.is_success() {
+            Ok(Uri(uri))
+        } else {
+            Err(status)
+        }
     }
 
     /// Parse a URI string.
-    pub fn parse(url: &str) -> Result<Self, crate::Status> {
-        Ok(Self(PooledPtr::initialize(|pool| unsafe {
-            let uri = pool.calloc::<apr_uri_t>();
-            let url = std::ffi::CString::new(url).unwrap();
-            let status = crate::generated::apr_uri_parse(
+    pub fn parse(pool: &'pool Pool, url: &str) -> Result<Self, crate::Status> {
+        let mut uri = pool.calloc::<apr_uri_t>();
+        let url = std::ffi::CString::new(url).unwrap();
+        let status = unsafe {
+            crate::generated::apr_uri_parse(
                 pool.as_mut_ptr(),
                 url.as_ptr() as *const std::ffi::c_char,
-                uri as *mut _ as *mut _,
-            );
-            let status = crate::Status::from(status);
-            if status.is_success() {
-                Ok(uri)
-            } else {
-                Err(status)
-            }
-        })?))
-    }
-}
-
-impl std::str::FromStr for Uri {
-    type Err = crate::Status;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse(s)
+                uri.as_mut_ptr(),
+            )
+        };
+        let status = crate::Status::from(status);
+        if status.is_success() {
+            Ok(Uri(uri))
+        } else {
+            Err(status)
+        }
     }
 }
 
@@ -196,6 +188,7 @@ pub fn port_of_scheme(scheme: &str) -> u16 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn test_port_of_scheme() {
         assert_eq!(80, super::port_of_scheme("http"));
@@ -205,7 +198,8 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let uri = super::Uri::parse("http://example.com:8080/").unwrap();
+        let pool = Pool::new();
+        let uri = super::Uri::parse(&pool, "http://example.com:8080/").unwrap();
         assert_eq!("http", uri.scheme().unwrap());
         assert_eq!(Some("example.com:8080"), uri.hostinfo());
         assert_eq!(Some("example.com"), uri.hostname());
@@ -221,7 +215,8 @@ mod tests {
 
     #[test]
     fn test_parse_hostinfo() {
-        let uri = super::Uri::parse_hostinfo("example.com:8080").unwrap();
+        let pool = Pool::new();
+        let uri = super::Uri::parse_hostinfo(&pool, "example.com:8080").unwrap();
         assert_eq!(None, uri.scheme());
         assert_eq!(Some("example.com:8080"), uri.hostinfo());
         assert_eq!(Some("example.com"), uri.hostname());

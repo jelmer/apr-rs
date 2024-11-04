@@ -1,5 +1,5 @@
 //! Command line option parsing.
-use crate::pool::PooledPtr;
+use crate::pool::{OwnedPooled, Pooled};
 
 /// A trait for types that can be converted into a sequence of allowed option characters.
 pub trait IntoAllowedOptionChars {
@@ -20,10 +20,7 @@ impl IntoAllowedOptionChars for &[char] {
 }
 
 /// A command line option.
-pub struct Option<'pool>(
-    PooledPtr<crate::generated::apr_getopt_option_t>,
-    std::marker::PhantomData<&'pool ()>,
-);
+pub struct Option<'pool>(Pooled<'pool, crate::generated::apr_getopt_option_t>);
 
 /// An indicator for a command line option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +60,7 @@ impl From<i32> for Indicator {
 impl<'pool> Option<'pool> {
     /// Create a new option.
     pub fn new(
+        pool: &'pool crate::pool::Pool,
         name: &str,
         has_arg: bool,
         indicator: Indicator,
@@ -71,20 +69,15 @@ impl<'pool> Option<'pool> {
         let name = std::ffi::CString::new(name).unwrap();
         let description = description.map(|s| std::ffi::CString::new(s).unwrap());
 
-        Self(
-            PooledPtr::initialize(|pool| {
-                let option = pool.calloc::<crate::generated::apr_getopt_option_t>();
-                option.name = name.as_ptr() as *mut _;
-                option.has_arg = if has_arg { 1 } else { 0 };
-                option.optch = indicator.into();
-                if let Some(description) = description {
-                    option.description = description.as_ptr() as *mut _;
-                }
-                Ok::<_, crate::Status>(option)
-            })
-            .unwrap(),
-            std::marker::PhantomData,
-        )
+        let mut option = pool.calloc::<crate::generated::apr_getopt_option_t>();
+        option.name = name.as_ptr() as *mut _;
+        option.has_arg = if has_arg { 1 } else { 0 };
+        option.optch = indicator.into();
+        if let Some(description) = description {
+            option.description = description.as_ptr() as *mut _;
+        }
+
+        Self(option)
     }
 
     /// Returns the name of the option.
@@ -130,7 +123,7 @@ impl<'pool> Option<'pool> {
 }
 
 /// A command line option parser.
-pub struct Getopt(PooledPtr<crate::generated::apr_getopt_t>);
+pub struct Getopt(OwnedPooled<crate::generated::apr_getopt_t>);
 
 /// The result of parsing a command line option.
 pub enum GetoptResult {
@@ -150,32 +143,32 @@ pub enum GetoptResult {
 impl Getopt {
     /// Create a new `Getopt` instance.
     pub fn new(args: &[&str]) -> Result<Self, crate::Status> {
-        PooledPtr::initialize(|pool| unsafe {
-            let mut os = std::ptr::null_mut();
+        let mut os = std::ptr::null_mut();
+        let pool = crate::pool::Pool::new();
 
-            let argv = args
-                .iter()
-                .map(|s| {
-                    let s = std::ffi::CString::new(*s).unwrap();
-                    crate::generated::apr_pstrdup(pool.as_mut_ptr(), s.as_ptr())
-                })
-                .collect::<Vec<_>>();
+        let argv = args
+            .iter()
+            .map(|s| {
+                let s = std::ffi::CString::new(*s).unwrap();
+                unsafe { crate::generated::apr_pstrdup(pool.as_mut_ptr(), s.as_ptr()) }
+            })
+            .collect::<Vec<_>>();
 
-            let rv = crate::generated::apr_getopt_init(
+        let rv = unsafe {
+            crate::generated::apr_getopt_init(
                 &mut os,
                 pool.as_mut_ptr(),
                 args.len() as i32,
                 argv.as_slice().as_ptr() as *mut _,
-            );
+            )
+        };
 
-            let status = crate::Status::from(rv);
-            if status.is_success() {
-                Ok(os)
-            } else {
-                Err(status)
-            }
-        })
-        .map(Self)
+        let status = crate::Status::from(rv);
+        if status.is_success() {
+            Ok(Self(OwnedPooled::new(pool.into(), os)))
+        } else {
+            Err(status)
+        }
     }
 
     /// Return the arguments.
@@ -305,13 +298,14 @@ impl Getopt {
 mod tests {
     #[test]
     fn test_getopt_long() {
+        let pool = crate::pool::Pool::new();
         let args = vec!["test", "-a", "-b", "foo", "-c", "bar"];
         let mut getopt = crate::getopt::Getopt::new(&args).unwrap();
         assert_eq!(getopt.args(), &args[..]);
         let opts = vec![
-            crate::getopt::Option::new("a", false, super::Indicator::Letter('a'), None),
-            crate::getopt::Option::new("b", true, super::Indicator::Letter('b'), None),
-            crate::getopt::Option::new("c", true, super::Indicator::Letter('c'), None),
+            crate::getopt::Option::new(&pool, "a", false, super::Indicator::Letter('a'), None),
+            crate::getopt::Option::new(&pool, "b", true, super::Indicator::Letter('b'), None),
+            crate::getopt::Option::new(&pool, "c", true, super::Indicator::Letter('c'), None),
         ];
         let mut got = vec![];
         loop {
