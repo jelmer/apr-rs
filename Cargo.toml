@@ -13,7 +13,7 @@ documentation = "https://docs.rs/apr"
 doctest = false
 
 [dependencies]
-ctor = "0.4"
+ctor = "0.5"
 url = { version = "2", optional = true }
 
 [features]
