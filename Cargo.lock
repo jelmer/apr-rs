@@ -15,10 +15,17 @@ dependencies = [
 name = "apr"
 version = "0.2.0"
 dependencies = [
- "bindgen",
+ "apr-sys",
  "ctor",
- "system-deps",
  "url",
+]
+
+[[package]]
+name = "apr-sys"
+version = "0.2.0"
+dependencies = [
+ "bindgen",
+ "system-deps",
 ]
 
 [[package]]
