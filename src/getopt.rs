@@ -1,5 +1,6 @@
 //! Command line option parsing.
-use crate::pool::{OwnedPooled, Pooled};
+use crate::pool::Pool;
+use std::marker::PhantomData;
 
 /// A trait for types that can be converted into a sequence of allowed option characters.
 pub trait IntoAllowedOptionChars {
@@ -20,7 +21,10 @@ impl IntoAllowedOptionChars for &[char] {
 }
 
 /// A command line option.
-pub struct Option<'pool>(Pooled<'pool, crate::generated::apr_getopt_option_t>);
+pub struct Option<'pool> {
+    ptr: *mut apr_sys::apr_getopt_option_t,
+    _pool: PhantomData<&'pool Pool>,
+}
 
 /// An indicator for a command line option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,61 +73,71 @@ impl<'pool> Option<'pool> {
         let name = std::ffi::CString::new(name).unwrap();
         let description = description.map(|s| std::ffi::CString::new(s).unwrap());
 
-        let mut option = pool.calloc::<crate::generated::apr_getopt_option_t>();
-        option.name = name.as_ptr() as *mut _;
-        option.has_arg = if has_arg { 1 } else { 0 };
-        option.optch = indicator.into();
-        if let Some(description) = description {
-            option.description = description.as_ptr() as *mut _;
+        let option = pool.calloc::<apr_sys::apr_getopt_option_t>();
+        unsafe {
+            (*option).name = name.as_ptr() as *mut _;
+            (*option).has_arg = if has_arg { 1 } else { 0 };
+            (*option).optch = indicator.into();
+            if let Some(description) = description {
+                (*option).description = description.as_ptr() as *mut _;
+            }
         }
 
-        Self(option)
+        Self {
+            ptr: option,
+            _pool: PhantomData,
+        }
     }
 
     /// Returns the name of the option.
     pub fn name(&self) -> &str {
         unsafe {
-            let name = (*self.0.as_ptr()).name;
+            let name = (*self.ptr).name;
             std::ffi::CStr::from_ptr(name).to_str().unwrap()
         }
     }
 
     /// Returns true if the option has an argument.
     pub fn has_arg(&self) -> bool {
-        self.0.has_arg != 0
+        unsafe { (*self.ptr).has_arg != 0 }
     }
 
     /// Returns the character code of the option.
     pub fn optch(&self) -> std::option::Option<u8> {
-        let v = self.0.optch;
-        if v > 255 {
-            None
-        } else {
-            Some(v as u8)
+        unsafe {
+            let v = (*self.ptr).optch;
+            if v > 255 {
+                None
+            } else {
+                Some(v as u8)
+            }
         }
     }
 
     /// Returns the description of the option.
     pub fn description(&self) -> &str {
         unsafe {
-            let description = self.0.description;
+            let description = (*self.ptr).description;
             std::ffi::CStr::from_ptr(description).to_str().unwrap()
         }
     }
 
     /// Returns the pointer to the underlying `apr_getopt_option_t` structure.
-    pub fn as_ptr(&self) -> *const crate::generated::apr_getopt_option_t {
-        self.0.as_ptr()
+    pub fn as_ptr(&self) -> *const apr_sys::apr_getopt_option_t {
+        self.ptr
     }
 
     /// Returns the mutable pointer to the underlying `apr_getopt_option_t` structure.
-    pub fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_getopt_option_t {
-        self.0.as_mut_ptr()
+    pub fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_getopt_option_t {
+        self.ptr
     }
 }
 
 /// A command line option parser.
-pub struct Getopt(OwnedPooled<crate::generated::apr_getopt_t>);
+pub struct Getopt {
+    ptr: *mut apr_sys::apr_getopt_t,
+    _pool: Pool, // Owns the pool to keep it alive
+}
 
 /// The result of parsing a command line option.
 pub enum GetoptResult {
@@ -150,12 +164,12 @@ impl Getopt {
             .iter()
             .map(|s| {
                 let s = std::ffi::CString::new(*s).unwrap();
-                unsafe { crate::generated::apr_pstrdup(pool.as_mut_ptr(), s.as_ptr()) }
+                unsafe { apr_sys::apr_pstrdup(pool.as_mut_ptr(), s.as_ptr()) }
             })
             .collect::<Vec<_>>();
 
         let rv = unsafe {
-            crate::generated::apr_getopt_init(
+            apr_sys::apr_getopt_init(
                 &mut os,
                 pool.as_mut_ptr(),
                 args.len() as i32,
@@ -165,7 +179,10 @@ impl Getopt {
 
         let status = crate::Status::from(rv);
         if status.is_success() {
-            Ok(Self(OwnedPooled::new(pool.into(), os)))
+            Ok(Self {
+                ptr: os,
+                _pool: pool,
+            })
         } else {
             Err(status)
         }
@@ -174,8 +191,8 @@ impl Getopt {
     /// Return the arguments.
     pub fn args(&self) -> Vec<&str> {
         unsafe {
-            let args = self.0.argv;
-            let args = std::slice::from_raw_parts(args, self.0.argc as usize);
+            let args = (*self.ptr).argv;
+            let args = std::slice::from_raw_parts(args, (*self.ptr).argc as usize);
             args.iter()
                 .map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())
                 .collect::<Vec<_>>()
@@ -184,17 +201,23 @@ impl Getopt {
 
     /// Allow interleaving of options and arguments.
     pub fn allow_interleaving(&mut self, allow: bool) {
-        self.0.interleave = if allow { 1 } else { 0 };
+        unsafe {
+            (*self.ptr).interleave = if allow { 1 } else { 0 };
+        }
     }
 
     /// Skip the first `skip` arguments.
     pub fn skip_start(&mut self, skip: i32) {
-        self.0.skip_start = skip;
+        unsafe {
+            (*self.ptr).skip_start = skip;
+        }
     }
 
     /// Skip the last `skip` arguments.
     pub fn skip_end(&mut self, skip: i32) {
-        self.0.skip_end = skip;
+        unsafe {
+            (*self.ptr).skip_end = skip;
+        }
     }
 
     /// Parse a command line option.
@@ -206,8 +229,8 @@ impl Getopt {
         let mut option_arg: *const std::ffi::c_char = std::ptr::null_mut();
 
         let rv = unsafe {
-            crate::generated::apr_getopt(
-                self.0.as_mut_ptr(),
+            apr_sys::apr_getopt(
+                self.ptr,
                 opts.as_slice().as_ptr(),
                 &mut option_ch,
                 &mut option_arg,
@@ -215,7 +238,7 @@ impl Getopt {
         };
 
         match rv as u32 {
-            crate::generated::APR_SUCCESS => {
+            apr_sys::APR_SUCCESS => {
                 let option_ch = option_ch as u8;
                 let option_arg = if option_arg.is_null() {
                     None
@@ -229,9 +252,9 @@ impl Getopt {
                 };
                 GetoptResult::Option(Indicator::Letter(option_ch as char), option_arg)
             }
-            crate::generated::APR_EOF => GetoptResult::End,
-            crate::generated::APR_BADCH => GetoptResult::BadOption(option_ch as u8 as char),
-            crate::generated::APR_BADARG => GetoptResult::MissingArgument(option_ch as u8 as char),
+            apr_sys::APR_EOF => GetoptResult::End,
+            apr_sys::APR_BADCH => GetoptResult::BadOption(option_ch as u8 as char),
+            apr_sys::APR_BADARG => GetoptResult::MissingArgument(option_ch as u8 as char),
             _ => panic!("unexpected status: {}", rv),
         }
     }
@@ -246,7 +269,7 @@ impl Getopt {
             .map(|ptr| unsafe { *ptr })
             .collect::<Vec<_>>();
         // sentinel
-        opts.push(crate::generated::apr_getopt_option_t {
+        opts.push(apr_sys::apr_getopt_option_t {
             name: std::ptr::null(),
             has_arg: 0,
             optch: 0,
@@ -254,8 +277,8 @@ impl Getopt {
         });
 
         let rv = unsafe {
-            crate::generated::apr_getopt_long(
-                self.0.as_mut_ptr(),
+            apr_sys::apr_getopt_long(
+                self.ptr,
                 opts.as_slice().as_ptr(),
                 &mut option_ch,
                 &mut option_arg,
@@ -263,7 +286,7 @@ impl Getopt {
         };
 
         match rv as u32 {
-            crate::generated::APR_SUCCESS => {
+            apr_sys::APR_SUCCESS => {
                 let option_arg = if option_arg.is_null() {
                     None
                 } else {
@@ -276,21 +299,21 @@ impl Getopt {
                 };
                 GetoptResult::Option(option_ch.into(), option_arg)
             }
-            crate::generated::APR_EOF => GetoptResult::End,
-            crate::generated::APR_BADCH => GetoptResult::BadOption(option_ch as u8 as char),
-            crate::generated::APR_BADARG => GetoptResult::MissingArgument(option_ch as u8 as char),
+            apr_sys::APR_EOF => GetoptResult::End,
+            apr_sys::APR_BADCH => GetoptResult::BadOption(option_ch as u8 as char),
+            apr_sys::APR_BADARG => GetoptResult::MissingArgument(option_ch as u8 as char),
             _ => panic!("unexpected status: {}", rv),
         }
     }
 
     /// Return ptr to the underlying `apr_getopt_t` structure.
-    pub fn as_ptr(&self) -> *const crate::generated::apr_getopt_t {
-        self.0.as_ptr()
+    pub fn as_ptr(&self) -> *const apr_sys::apr_getopt_t {
+        self.ptr
     }
 
     /// Return mutable ptr to the underlying `apr_getopt_t` structure.
-    pub fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_getopt_t {
-        self.0.as_mut_ptr()
+    pub fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_getopt_t {
+        self.ptr
     }
 }
 

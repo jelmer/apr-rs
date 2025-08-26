@@ -1,5 +1,5 @@
 //! Date parsing functions
-use crate::generated::apr_date_checkmask;
+use apr_sys::apr_date_checkmask;
 use crate::time::Time;
 
 /// Check if the given data matches the mask.
@@ -20,7 +20,7 @@ pub fn checkmask(data: &str, mask: &str) -> bool {
 pub fn parse_http(data: &str) -> Option<Time> {
     let data = std::ffi::CString::new(data).unwrap();
     let rv =
-        unsafe { crate::generated::apr_date_parse_http(data.as_ptr() as *const std::ffi::c_char) };
+        unsafe { apr_sys::apr_date_parse_http(data.as_ptr() as *const std::ffi::c_char) };
     if rv == 0 {
         None
     } else {
@@ -32,7 +32,7 @@ pub fn parse_http(data: &str) -> Option<Time> {
 pub fn parse_rfc(data: &str) -> Option<Time> {
     let data = std::ffi::CString::new(data).unwrap();
     let rv =
-        unsafe { crate::generated::apr_date_parse_rfc(data.as_ptr() as *const std::ffi::c_char) };
+        unsafe { apr_sys::apr_date_parse_rfc(data.as_ptr() as *const std::ffi::c_char) };
     if rv == 0 {
         None
     } else {

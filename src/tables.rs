@@ -1,26 +1,27 @@
-pub use crate::generated::{apr_array_header_t, apr_table_t};
-use crate::pool::{Pool, Pooled};
+pub use apr_sys::{apr_array_header_t, apr_table_t};
+use crate::pool::Pool;
+use std::marker::PhantomData;
 
 /// A wrapper around an `apr_array_header_t`.
-pub struct ArrayHeader<'pool, T: Sized>(
-    Pooled<'pool, apr_array_header_t>,
-    std::marker::PhantomData<T>,
-);
+pub struct ArrayHeader<'pool, T: Sized> {
+    ptr: *mut apr_array_header_t,
+    _phantom: PhantomData<(T, &'pool Pool)>,
+}
 
 impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     /// Returns true if the array is empty.
     pub fn is_empty(&self) -> bool {
-        unsafe { crate::generated::apr_is_empty_array(&*self.0) != 0 }
+        unsafe { apr_sys::apr_is_empty_array(self.ptr) != 0 }
     }
 
     /// Returns the number of elements in the array.
     pub fn len(&self) -> usize {
-        self.0.nelts as usize
+        unsafe { (*self.ptr).nelts as usize }
     }
 
     /// Returns the number of elements that can be stored in the array without reallocating.
     pub fn allocated(&self) -> usize {
-        self.0.nalloc as usize
+        unsafe { (*self.ptr).nalloc as usize }
     }
 
     /// Create an empty ArrayHeader.
@@ -29,19 +30,25 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     }
 
     pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self {
-        let array = Pooled::from_ptr(unsafe {
-            crate::generated::apr_array_make(
+        let array = unsafe {
+            apr_sys::apr_array_make(
                 pool.as_mut_ptr(),
                 nelts as i32,
                 std::mem::size_of::<T>() as i32,
             )
-        });
+        };
 
-        Self(array, std::marker::PhantomData)
+        Self {
+            ptr: array,
+            _phantom: PhantomData,
+        }
     }
 
     pub fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
-        Self(Pooled::from_ptr(ptr), std::marker::PhantomData)
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
     }
 
     /// Return the element at the given index.
@@ -55,18 +62,18 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
 
     /// Return a pointer to the element at the given index.
     unsafe fn nth_unchecked(&self, index: usize) -> *mut T {
-        unsafe { self.0.elts.add(index * self.0.elt_size as usize) as *mut T }
+        unsafe { (*self.ptr).elts.add(index * (*self.ptr).elt_size as usize) as *mut T }
     }
 
     /// Return the size of each element in the array.
     pub fn element_size(&self) -> usize {
-        self.0.elt_size as usize
+        unsafe { (*self.ptr).elt_size as usize }
     }
 
     /// Push an element onto the end of the array.
     pub fn push(&mut self, item: T) {
         unsafe {
-            let ptr = crate::generated::apr_array_push(&mut *self.0);
+            let ptr = apr_sys::apr_array_push(self.ptr);
             // copy item to the memory at ptr
             std::ptr::copy_nonoverlapping(&item, ptr as *mut T, 1);
         }
@@ -75,14 +82,14 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     /// Clear the array
     pub fn clear(&mut self) {
         unsafe {
-            crate::generated::apr_array_clear(&mut *self.0);
+            apr_sys::apr_array_clear(self.ptr);
         }
     }
 
     /// Concatenate two arrays.
     pub fn cat(&mut self, other: &ArrayHeader<T>) {
         unsafe {
-            crate::generated::apr_array_cat(&mut *self.0, &*other.0);
+            apr_sys::apr_array_cat(self.ptr, other.ptr);
         }
     }
 
@@ -92,22 +99,20 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         first: &ArrayHeader<T>,
         second: &ArrayHeader<T>,
     ) -> ArrayHeader<'newpool, T> {
-        ArrayHeader(
-            Pooled::from_ptr(unsafe {
-                crate::generated::apr_array_append(pool.as_mut_ptr(), &*first.0, &*second.0)
-            }),
-            std::marker::PhantomData,
-        )
+        ArrayHeader {
+            ptr: unsafe {
+                apr_sys::apr_array_append(pool.as_mut_ptr(), first.ptr, second.ptr)
+            },
+            _phantom: PhantomData,
+        }
     }
 
     /// Copy the array.
     pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> ArrayHeader<'newpool, T> {
-        ArrayHeader(
-            Pooled::from_ptr(unsafe {
-                crate::generated::apr_array_copy(pool.as_mut_ptr(), &*self.0)
-            }),
-            std::marker::PhantomData,
-        )
+        ArrayHeader {
+            ptr: unsafe { apr_sys::apr_array_copy(pool.as_mut_ptr(), self.ptr) },
+            _phantom: PhantomData,
+        }
     }
 
     /// Iterate over the entries in an array
@@ -116,12 +121,12 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     }
 
     /// Return a pointer to the underlying `apr_array_header_t`.
-    pub fn as_ptr(&self) -> *const crate::generated::apr_array_header_t {
-        self.0.as_ptr()
+    pub fn as_ptr(&self) -> *const apr_sys::apr_array_header_t {
+        self.ptr
     }
 
-    pub unsafe fn as_mut_ptr(&mut self) -> *mut crate::generated::apr_array_header_t {
-        self.0.as_mut_ptr()
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_array_header_t {
+        self.ptr
     }
 }
 
@@ -158,40 +163,46 @@ impl<'a, T: Sized + Copy> Iterator for ArrayHeaderIterator<'a, T> {
     }
 }
 
-pub struct Table<'pool>(
-    Pooled<'pool, apr_table_t>,
-    std::marker::PhantomData<&'pool ()>,
-);
+pub struct Table<'pool> {
+    ptr: *mut apr_table_t,
+    _phantom: PhantomData<&'pool Pool>,
+}
 
 impl<'pool> Table<'pool> {
     /// Check if the table is empty.
     pub fn is_empty(&self) -> bool {
-        unsafe { crate::generated::apr_is_empty_table(&*self.0) != 0 }
+        unsafe { apr_sys::apr_is_empty_table(self.ptr) != 0 }
     }
 
     pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> Table<'newpool> {
-        let newtable = unsafe { crate::generated::apr_table_copy(pool.as_mut_ptr(), &*self.0) };
-        Table(Pooled::from_ptr(newtable), std::marker::PhantomData)
+        let newtable = unsafe { apr_sys::apr_table_copy(pool.as_mut_ptr(), self.ptr) };
+        Table {
+            ptr: newtable,
+            _phantom: PhantomData,
+        }
     }
 
     /// Clear the table.
     pub fn clear(&mut self) {
         unsafe {
-            crate::generated::apr_table_clear(&mut *self.0);
+            apr_sys::apr_table_clear(self.ptr);
         }
     }
 
     /// Create a new table, with space for nelts entries.
     pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self {
-        let ret = unsafe { crate::generated::apr_table_make(pool.as_mut_ptr(), nelts as i32) };
-        Self(Pooled::from_ptr(ret), std::marker::PhantomData)
+        let ret = unsafe { apr_sys::apr_table_make(pool.as_mut_ptr(), nelts as i32) };
+        Self {
+            ptr: ret,
+            _phantom: PhantomData,
+        }
     }
 
     /// Return the item with the given key.
     pub fn get(&self, key: &str) -> Option<&str> {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
-            let value = crate::generated::apr_table_get(&*self.0, key.as_ptr());
+            let value = apr_sys::apr_table_get(self.ptr, key.as_ptr());
             if value.is_null() {
                 None
             } else {
@@ -203,7 +214,7 @@ impl<'pool> Table<'pool> {
     pub fn getm(&self, pool: &mut crate::Pool, key: &str) -> Option<&str> {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
-            let value = crate::generated::apr_table_getm(pool.as_mut_ptr(), &*self.0, key.as_ptr());
+            let value = apr_sys::apr_table_getm(pool.as_mut_ptr(), self.ptr, key.as_ptr());
             if value.is_null() {
                 None
             } else {
@@ -217,7 +228,7 @@ impl<'pool> Table<'pool> {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
         unsafe {
-            crate::generated::apr_table_set(&mut *self.0, key.as_ptr(), value.as_ptr());
+            apr_sys::apr_table_set(self.ptr, key.as_ptr(), value.as_ptr());
         }
     }
 
@@ -225,14 +236,14 @@ impl<'pool> Table<'pool> {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
         unsafe {
-            crate::generated::apr_table_setn(&mut *self.0, key.as_ptr(), value.as_ptr());
+            apr_sys::apr_table_setn(self.ptr, key.as_ptr(), value.as_ptr());
         }
     }
 
     pub fn unset(&mut self, key: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
-            crate::generated::apr_table_unset(&mut *self.0, key.as_ptr());
+            apr_sys::apr_table_unset(self.ptr, key.as_ptr());
         }
     }
 
@@ -240,7 +251,7 @@ impl<'pool> Table<'pool> {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
         unsafe {
-            crate::generated::apr_table_merge(&mut *self.0, key.as_ptr(), value.as_ptr());
+            apr_sys::apr_table_merge(self.ptr, key.as_ptr(), value.as_ptr());
         }
     }
 
@@ -248,7 +259,7 @@ impl<'pool> Table<'pool> {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
         unsafe {
-            crate::generated::apr_table_mergen(&mut *self.0, key.as_ptr(), value.as_ptr());
+            apr_sys::apr_table_mergen(self.ptr, key.as_ptr(), value.as_ptr());
         }
     }
 
@@ -257,7 +268,7 @@ impl<'pool> Table<'pool> {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
         unsafe {
-            crate::generated::apr_table_add(&mut *self.0, key.as_ptr(), value.as_ptr());
+            apr_sys::apr_table_add(self.ptr, key.as_ptr(), value.as_ptr());
         }
     }
 
@@ -267,10 +278,12 @@ impl<'pool> Table<'pool> {
         overlay: &Table,
         base: &Table,
     ) -> Table<'newpool> {
-        let new_table = unsafe {
-            crate::generated::apr_table_overlay(pool.as_mut_ptr(), &*overlay.0, &*base.0)
-        };
-        Table(Pooled::from_ptr(new_table), std::marker::PhantomData)
+        let new_table =
+            unsafe { apr_sys::apr_table_overlay(pool.as_mut_ptr(), overlay.ptr, base.ptr) };
+        Table {
+            ptr: new_table,
+            _phantom: PhantomData,
+        }
     }
 }
 
