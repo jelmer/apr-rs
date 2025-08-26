@@ -68,8 +68,8 @@ impl Status {
     pub fn raw_os_error(&self) -> Option<i32> {
         match self {
             Status::Success => None,
-            e if (*e) as u32 >= crate::generated::APR_OS_START_SYSERR => {
-                Some((*e as u32 - crate::generated::APR_OS_START_SYSERR) as i32)
+            e if (*e) as u32 >= apr_sys::APR_OS_START_SYSERR => {
+                Some((*e as u32 - apr_sys::APR_OS_START_SYSERR) as i32)
             }
             _ => None,
         }
@@ -79,8 +79,8 @@ impl Status {
     pub fn strerror(&self) -> String {
         let buf = unsafe {
             let mut buf = [0u8; 1024];
-            crate::generated::apr_strerror(
-                *self as crate::generated::apr_status_t,
+            apr_sys::apr_strerror(
+                *self as apr_sys::apr_status_t,
                 buf.as_mut_ptr() as *mut std::ffi::c_char,
                 buf.len(),
             );
@@ -93,53 +93,55 @@ impl Status {
 impl From<u32> for Status {
     fn from(status: u32) -> Self {
         match status {
-            crate::generated::APR_SUCCESS => Status::Success,
-            crate::generated::APR_ENOSTAT => Status::NoStat,
-            crate::generated::APR_ENOPOOL => Status::NoPool,
-            crate::generated::APR_EBADDATE => Status::BadDate,
-            crate::generated::APR_EINVALSOCK => Status::InvalidSocket,
-            crate::generated::APR_ENOPROC => Status::NoProcess,
-            crate::generated::APR_ENOTIME => Status::NoTime,
-            crate::generated::APR_ENODIR => Status::NoDirectory,
-            crate::generated::APR_ENOLOCK => Status::NoLock,
-            crate::generated::APR_ENOPOLL => Status::NoPoll,
-            crate::generated::APR_ENOSOCKET => Status::NoSocket,
-            crate::generated::APR_ENOTHREAD => Status::NoThread,
-            crate::generated::APR_ENOTHDKEY => Status::NoThreadKey,
-            crate::generated::APR_ENOSHMAVAIL => Status::NoSharedMemoryAvailable,
-            crate::generated::APR_EDSOOPEN => Status::DSOOpen,
-            crate::generated::APR_EGENERAL => Status::General,
-            crate::generated::APR_EBADIP => Status::BadIpAddress,
-            crate::generated::APR_EBADMASK => Status::BadMask,
-            crate::generated::APR_ESYMNOTFOUND => Status::SymbolNotFound,
-            crate::generated::APR_ENOTENOUGHENTROPY => Status::NotEnoughEntropy,
+            apr_sys::APR_SUCCESS => Status::Success,
+            apr_sys::APR_ENOSTAT => Status::NoStat,
+            apr_sys::APR_ENOPOOL => Status::NoPool,
+            apr_sys::APR_EBADDATE => Status::BadDate,
+            apr_sys::APR_EINVALSOCK => Status::InvalidSocket,
+            apr_sys::APR_ENOPROC => Status::NoProcess,
+            apr_sys::APR_ENOTIME => Status::NoTime,
+            apr_sys::APR_ENODIR => Status::NoDirectory,
+            apr_sys::APR_ENOLOCK => Status::NoLock,
+            apr_sys::APR_ENOPOLL => Status::NoPoll,
+            apr_sys::APR_ENOSOCKET => Status::NoSocket,
+            apr_sys::APR_ENOTHREAD => Status::NoThread,
+            apr_sys::APR_ENOTHDKEY => Status::NoThreadKey,
+            apr_sys::APR_ENOSHMAVAIL => Status::NoSharedMemoryAvailable,
+            apr_sys::APR_EDSOOPEN => Status::DSOOpen,
+            apr_sys::APR_EGENERAL => Status::General,
+            apr_sys::APR_EBADIP => Status::BadIpAddress,
+            apr_sys::APR_EBADMASK => Status::BadMask,
+            apr_sys::APR_ESYMNOTFOUND => Status::SymbolNotFound,
+            apr_sys::APR_ENOTENOUGHENTROPY => Status::NotEnoughEntropy,
 
-            crate::generated::APR_INCHILD => Status::InChild,
-            crate::generated::APR_INPARENT => Status::InParent,
-            crate::generated::APR_DETACH => Status::Detach,
-            crate::generated::APR_NOTDETACH => Status::NotDetach,
-            crate::generated::APR_CHILD_DONE => Status::ChildDone,
-            crate::generated::APR_CHILD_NOTDONE => Status::ChildNotDone,
-            crate::generated::APR_TIMEUP => Status::TimeUp,
-            crate::generated::APR_INCOMPLETE => Status::Incomplete,
-            crate::generated::APR_BADCH => Status::BadCh,
-            crate::generated::APR_BADARG => Status::BadArgument,
-            crate::generated::APR_EOF => Status::Eof,
-            crate::generated::APR_NOTFOUND => Status::NotFound,
-            crate::generated::APR_ANONYMOUS => Status::Anonymous,
-            crate::generated::APR_FILEBASED => Status::FileBased,
-            crate::generated::APR_KEYBASED => Status::KeyBased,
-            crate::generated::APR_EINIT => Status::Initializer,
-            crate::generated::APR_ENOTIMPL => Status::NotImplemented,
-            crate::generated::APR_EMISMATCH => Status::Mismatch,
-            crate::generated::APR_EABSOLUTE => Status::Absolute,
-            crate::generated::APR_ERELATIVE => Status::Relative,
-            crate::generated::APR_EINCOMPLETE => Status::IncompleteError,
-            crate::generated::APR_EABOVEROOT => Status::AboveRoot,
-            crate::generated::APR_EBUSY => Status::Busy,
-            crate::generated::APR_EPROC_UNKNOWN => Status::ProcessUnknown,
+            apr_sys::APR_INCHILD => Status::InChild,
+            apr_sys::APR_INPARENT => Status::InParent,
+            apr_sys::APR_DETACH => Status::Detach,
+            apr_sys::APR_NOTDETACH => Status::NotDetach,
+            apr_sys::APR_CHILD_DONE => Status::ChildDone,
+            apr_sys::APR_CHILD_NOTDONE => Status::ChildNotDone,
+            apr_sys::APR_TIMEUP => Status::TimeUp,
+            apr_sys::APR_INCOMPLETE => Status::Incomplete,
+            apr_sys::APR_BADCH => Status::BadCh,
+            apr_sys::APR_BADARG => Status::BadArgument,
+            apr_sys::APR_EOF => Status::Eof,
+            apr_sys::APR_NOTFOUND => Status::NotFound,
+            apr_sys::APR_ANONYMOUS => Status::Anonymous,
+            apr_sys::APR_FILEBASED => Status::FileBased,
+            apr_sys::APR_KEYBASED => Status::KeyBased,
+            apr_sys::APR_EINIT => Status::Initializer,
+            apr_sys::APR_ENOTIMPL => Status::NotImplemented,
+            apr_sys::APR_EMISMATCH => Status::Mismatch,
+            apr_sys::APR_EABSOLUTE => Status::Absolute,
+            apr_sys::APR_ERELATIVE => Status::Relative,
+            apr_sys::APR_EINCOMPLETE => Status::IncompleteError,
+            apr_sys::APR_EABOVEROOT => Status::AboveRoot,
+            apr_sys::APR_EBUSY => Status::Busy,
+            apr_sys::APR_EPROC_UNKNOWN => Status::ProcessUnknown,
 
-            _ => panic!("Unknown status code: {}", status),
+            // For unknown or OS-specific error codes, return a General error
+            // APR maps OS errors into its status space
+            _ => Status::General,
         }
     }
 }
@@ -173,5 +175,32 @@ impl From<std::io::ErrorKind> for Status {
 impl From<std::io::Error> for Status {
     fn from(error: std::io::Error) -> Self {
         error.kind().into()
+    }
+}
+
+impl From<Status> for std::io::Error {
+    fn from(status: Status) -> Self {
+        let kind = match status {
+            Status::NotFound | Status::NoDirectory => std::io::ErrorKind::NotFound,
+            Status::BadArgument | Status::InvalidSocket => std::io::ErrorKind::InvalidInput,
+            Status::Eof => std::io::ErrorKind::UnexpectedEof,
+            Status::Busy => std::io::ErrorKind::ResourceBusy,
+            Status::TimeUp => std::io::ErrorKind::TimedOut,
+            _ => return std::io::Error::other(status),
+        };
+
+        std::io::Error::new(kind, status)
+    }
+}
+
+/// Generic helper to convert APR status codes to Results
+///
+/// This follows the common C pattern where 0/APR_SUCCESS means success
+/// and non-zero means error. Used throughout APR and libraries built on it.
+pub fn apr_result(status_code: i32) -> Result<(), Status> {
+    if status_code == apr_sys::APR_SUCCESS as i32 {
+        Ok(())
+    } else {
+        Err(Status::from(status_code))
     }
 }
