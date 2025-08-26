@@ -1,5 +1,5 @@
 //! Memory pool management.
-use crate::generated;
+use apr_sys;
 
 /// A memory pool.
 #[derive(Debug)]

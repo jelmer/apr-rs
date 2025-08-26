@@ -5,6 +5,7 @@
 
 pub mod callbacks;
 pub mod date;
+pub mod error;
 pub mod file;
 pub mod getopt;
 pub mod hash;
@@ -17,6 +18,7 @@ pub mod time;
 pub mod uri;
 pub mod versions;
 
+pub use error::{Error, ErrorContext, Result};
 pub use pool::Pool;
 pub use status::Status;
 

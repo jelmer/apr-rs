@@ -1,5 +1,5 @@
-pub use apr_sys::{apr_array_header_t, apr_table_t};
 use crate::pool::Pool;
+pub use apr_sys::{apr_array_header_t, apr_table_t};
 use std::marker::PhantomData;
 
 /// A wrapper around an `apr_array_header_t`.
@@ -100,9 +100,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         second: &ArrayHeader<T>,
     ) -> ArrayHeader<'newpool, T> {
         ArrayHeader {
-            ptr: unsafe {
-                apr_sys::apr_array_append(pool.as_mut_ptr(), first.ptr, second.ptr)
-            },
+            ptr: unsafe { apr_sys::apr_array_append(pool.as_mut_ptr(), first.ptr, second.ptr) },
             _phantom: PhantomData,
         }
     }

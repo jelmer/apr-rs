@@ -1,6 +1,6 @@
 //! URI parsing and manipulation.
-pub use apr_sys::apr_uri_t;
 use crate::pool::Pool;
+pub use apr_sys::apr_uri_t;
 use std::ffi::CStr;
 use std::marker::PhantomData;
 
@@ -134,13 +134,9 @@ impl<'pool> Uri<'pool> {
     pub fn unparse(&self, flags: u32) -> String {
         let pool = crate::Pool::new();
         unsafe {
-            CStr::from_ptr(apr_sys::apr_uri_unparse(
-                pool.as_mut_ptr(),
-                self.ptr,
-                flags,
-            ))
-            .to_str()
-            .unwrap()
+            CStr::from_ptr(apr_sys::apr_uri_unparse(pool.as_mut_ptr(), self.ptr, flags))
+                .to_str()
+                .unwrap()
         }
         .to_string()
     }

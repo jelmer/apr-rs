@@ -24,8 +24,7 @@ impl Time {
 
     /// Returns the time as a string in the format `Sun Nov 06 08:49:37 1994`.
     pub fn ctime(&self) -> String {
-        let mut buf: [u8; apr_sys::APR_CTIME_LEN as usize] =
-            [0; apr_sys::APR_CTIME_LEN as usize];
+        let mut buf: [u8; apr_sys::APR_CTIME_LEN as usize] = [0; apr_sys::APR_CTIME_LEN as usize];
         unsafe {
             apr_sys::apr_ctime(buf.as_mut_ptr() as *mut std::ffi::c_char, self.0);
         }

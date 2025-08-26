@@ -1,6 +1,6 @@
 //! Hash map implementation.
-pub use apr_sys::apr_hash_t;
 use crate::pool::Pool;
+pub use apr_sys::apr_hash_t;
 use std::marker::PhantomData;
 
 /// A hash map.
@@ -61,9 +61,8 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     pub fn in_pool(pool: &std::rc::Rc<Pool>) -> Self {
         unsafe {
             let mut pool = pool.clone();
-            let data = apr_sys::apr_hash_make(
-                std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr(),
-            );
+            let data =
+                apr_sys::apr_hash_make(std::rc::Rc::get_mut(&mut pool).unwrap().as_mut_ptr());
             Self {
                 ptr: data,
                 _phantom: PhantomData,
@@ -72,12 +71,12 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     }
 
     /// Returns the number of elements in the hash map.
-    pub fn len(&mut self) -> usize {
+    pub fn len(&self) -> usize {
         unsafe { apr_sys::apr_hash_count(self.ptr) as usize }
     }
 
     /// Returns true if the hash map contains no elements.
-    pub fn is_empty(&mut self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
@@ -87,7 +86,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
     }
 
     /// Returns a reference to the value corresponding to the key.
-    pub fn get(&mut self, key: K) -> Option<&'pool V> {
+    pub fn get(&self, key: K) -> Option<&'pool V> {
         let key = key.into_hash_key();
         unsafe {
             let val = apr_sys::apr_hash_get(
@@ -245,7 +244,7 @@ mod tests {
         let pool = Pool::new();
         let mut hash = super::Hash::new(&pool);
         hash.set("foo", &"bar");
-        let mut hash2 = hash.copy(&pool).unwrap();
+        let hash2 = hash.copy(&pool).unwrap();
         assert_eq!(hash2.get("foo"), Some(&"bar"));
     }
 }

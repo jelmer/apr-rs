@@ -125,15 +125,81 @@ impl<'a> std::fmt::Display for BStrUtf8<'a> {
     }
 }
 
-/// Duplicate a Rust string into pool-allocated memory as a C string
-pub fn pstrdup<'a>(s: &str, pool: &'a Pool) -> Result<*const c_char, std::ffi::NulError> {
-    let cstring = CString::new(s)?;
-    unsafe {
-        Ok(apr_sys::apr_pstrdup(
-            pool.as_mut_ptr(),
-            cstring.as_ptr(),
-        ))
+/// Safe wrapper for pool-allocated C strings
+pub struct PoolString<'a> {
+    ptr: *const c_char,
+    _marker: PhantomData<&'a Pool>,
+}
+
+impl<'a> PoolString<'a> {
+    /// Get the raw C string pointer (for FFI calls)
+    pub fn as_ptr(&self) -> *const c_char {
+        self.ptr
     }
+
+    /// Get as a BStr (borrowed bytes)
+    pub fn as_bstr(&self) -> BStr<'a> {
+        unsafe { BStr::from_ptr(self.ptr) }
+    }
+
+    /// Try to get as UTF-8 string
+    pub fn as_str(&self) -> Result<&str, std::str::Utf8Error> {
+        unsafe {
+            let cstr = CStr::from_ptr(self.ptr);
+            cstr.to_str()
+        }
+    }
+
+    /// Get as bytes
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            let cstr = CStr::from_ptr(self.ptr);
+            cstr.to_bytes()
+        }
+    }
+
+    /// Get length in bytes
+    pub fn len(&self) -> usize {
+        self.as_bstr().len()
+    }
+
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<'a> std::fmt::Display for PoolString<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.as_str() {
+            Ok(s) => write!(f, "{}", s),
+            Err(_) => write!(f, "{:?}", self.as_bytes()),
+        }
+    }
+}
+
+impl<'a> std::fmt::Debug for PoolString<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.as_str() {
+            Ok(s) => write!(f, "PoolString({:?})", s),
+            Err(_) => write!(f, "PoolString({:?})", self.as_bytes()),
+        }
+    }
+}
+
+/// Duplicate a Rust string into pool-allocated memory as a C string
+pub fn pstrdup<'a>(s: &str, pool: &'a Pool) -> Result<PoolString<'a>, std::ffi::NulError> {
+    let cstring = CString::new(s)?;
+    let ptr = unsafe { apr_sys::apr_pstrdup(pool.as_mut_ptr(), cstring.as_ptr()) };
+    Ok(PoolString {
+        ptr,
+        _marker: PhantomData,
+    })
+}
+
+/// Get raw pointer version (for advanced users)
+pub fn pstrdup_raw(s: &str, pool: &Pool) -> Result<*const c_char, std::ffi::NulError> {
+    Ok(pstrdup(s, pool)?.as_ptr())
 }
 
 /// Duplicate a limited portion of a Rust string into pool-allocated memory
@@ -141,15 +207,13 @@ pub fn pstrndup<'a>(
     s: &str,
     n: usize,
     pool: &'a Pool,
-) -> Result<*const c_char, std::ffi::NulError> {
+) -> Result<PoolString<'a>, std::ffi::NulError> {
     let cstring = CString::new(s)?;
-    unsafe {
-        Ok(apr_sys::apr_pstrndup(
-            pool.as_mut_ptr(),
-            cstring.as_ptr(),
-            n,
-        ))
-    }
+    let ptr = unsafe { apr_sys::apr_pstrndup(pool.as_mut_ptr(), cstring.as_ptr(), n) };
+    Ok(PoolString {
+        ptr,
+        _marker: PhantomData,
+    })
 }
 
 /// Copy bytes into pool-allocated memory (not null-terminated)
@@ -204,18 +268,25 @@ mod tests {
     fn test_pool_string_operations() {
         let pool = Pool::new();
 
-        let pooled_ptr = pstrdup("test string", &pool).unwrap();
-        unsafe {
-            let bstr = BStr::from_ptr(pooled_ptr);
-            assert_eq!(bstr.to_str().unwrap(), "test string");
+        let pooled = pstrdup("test string", &pool).unwrap();
+        assert_eq!(pooled.as_str().unwrap(), "test string");
+        assert_eq!(pooled.len(), 11);
+        assert!(!pooled.is_empty());
 
-            let bstr_utf8 = BStrUtf8::from_ptr(pooled_ptr).unwrap();
-            assert_eq!(bstr_utf8.as_str(), "test string");
-        }
+        let bstr = pooled.as_bstr();
+        assert_eq!(bstr.to_str().unwrap(), "test string");
 
         // Test pmemdup
         let data = b"binary data";
         let copied = pmemdup(data, &pool);
         assert_eq!(copied, data);
+    }
+
+    #[test]
+    fn test_pool_string_display() {
+        let pool = Pool::new();
+        let pooled = pstrdup("hello", &pool).unwrap();
+        assert_eq!(format!("{}", pooled), "hello");
+        assert_eq!(format!("{:?}", pooled), "PoolString(\"hello\")");
     }
 }

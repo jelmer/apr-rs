@@ -6,7 +6,7 @@
 
 use crate::pool::Pool;
 use crate::status::{apr_result, Status};
-use crate::strings::{pstrdup, BStr};
+use crate::strings::{pstrdup, BStr, PoolString};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -15,10 +15,7 @@ use std::path::{Path, PathBuf};
 /// This handles platform-specific path encoding:
 /// - On Unix: paths are typically UTF-8 bytes
 /// - On Windows: converts from UTF-16 to the appropriate byte encoding
-pub fn path_to_cstring<P: AsRef<Path>>(
-    path: P,
-    pool: &Pool,
-) -> Result<*const std::ffi::c_char, Status> {
+pub fn path_to_cstring<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PoolString, Status> {
     let path = path.as_ref();
 
     #[cfg(unix)]
@@ -70,7 +67,7 @@ pub fn normalize_path<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PathBuf, S
         let status = apr_sys::apr_filepath_merge(
             &mut normalized_ptr as *mut _ as *mut *mut std::ffi::c_char,
             std::ptr::null(), // No root path
-            path_cstr,
+            path_cstr.as_ptr(),
             apr_sys::APR_FILEPATH_SECUREROOT as i32,
             pool.as_mut_ptr(),
         );
@@ -105,8 +102,8 @@ pub fn join_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
         let mut joined_ptr: *const std::ffi::c_char = std::ptr::null();
         let status = apr_sys::apr_filepath_merge(
             &mut joined_ptr as *mut _ as *mut *mut std::ffi::c_char,
-            base_cstr,
-            path_cstr,
+            base_cstr.as_ptr(),
+            path_cstr.as_ptr(),
             0, // No special flags
             pool.as_mut_ptr(),
         );
@@ -136,7 +133,7 @@ pub fn set_cwd<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<(), Status> {
     let path_cstr = path_to_cstring(path, pool)?;
 
     unsafe {
-        let status = apr_sys::apr_filepath_set(path_cstr, pool.as_mut_ptr());
+        let status = apr_sys::apr_filepath_set(path_cstr.as_ptr(), pool.as_mut_ptr());
 
         apr_result(status)
     }
@@ -152,14 +149,11 @@ mod tests {
         let pool = Pool::new();
         let path = Path::new("/tmp/test/file.txt");
 
-        let cstring_ptr = path_to_cstring(path, &pool).unwrap();
-        unsafe {
-            let bstr = BStr::from_ptr(cstring_ptr);
+        let pool_string = path_to_cstring(path, &pool).unwrap();
 
-            // Should contain the path
-            assert!(bstr.to_str().unwrap().contains("tmp"));
-            assert!(bstr.to_str().unwrap().contains("file.txt"));
-        }
+        // Should contain the path
+        assert!(pool_string.as_str().unwrap().contains("tmp"));
+        assert!(pool_string.as_str().unwrap().contains("file.txt"));
     }
 
     #[test]
