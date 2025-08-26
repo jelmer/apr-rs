@@ -58,7 +58,7 @@ fn create_bindings(
         .expect("Failed to generate bindings");
 
     bindings
-        .write_to_file(out_path.join("generated.rs"))
+        .write_to_file(out_path.join("bindings.rs"))
         .expect("Failed to write bindings");
 }
 
