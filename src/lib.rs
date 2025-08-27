@@ -9,6 +9,8 @@ pub mod error;
 pub mod file;
 pub mod getopt;
 pub mod hash;
+pub mod mmap;
+pub mod network;
 pub mod paths;
 pub mod pool;
 pub mod status;
