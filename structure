@@ -1,0 +1,334 @@
+Short version: keep APR pools and raw pointers completely inside your crate; present a safe, idiomatic API with RAII, Result, and normal Rust ownership. Treat a pool as a scoped, non-Send arena whose lifetime bounds any borrowed data you hand out. Convert to owned Rust types at API edges unless the caller opts into zero-copy “borrowed from pool” views.
+
+Here’s a blueprint that’s worked well for C libs with arena allocators (APR) and callback batons (Subversion):
+
+1) Crate layout
+
+apr-sys and svn-sys: raw bindgen outputs + build.rs that uses pkg-config (apr-1, aprutil-1, svn_client-1, svn_fs-1, …).
+
+apr: tiny safe wrappers for pools, time, tables, hashes, files/streams.
+
+svn: the public API (client, wc, ra, fs). Re-export just enough types.
+
+Keep -sys crates separate so consumers with exotic link setups can swap them.
+
+2) Initialization
+
+APR/SVN require one-time init & per-thread cleanup in C land.
+
+use std::sync::OnceLock;
+
+pub fn init() -> Result<(), SvnError> {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        unsafe {
+            apr_sys::apr_initialize();
+            // svn_dso_initialize2(NULL, NULL) usually not needed client-side.
+            svn_sys::svn_dso_initialize2(std::ptr::null_mut(), std::ptr::null_mut());
+        }
+    });
+    Ok(())
+}
+
+
+Call this from your crate entry points so users rarely see it.
+
+3) APR pool wrapper (hidden by default)
+
+Model pools as scoped arenas. They are not thread-safe and most APR/SVN allocations are tied to them. Provide:
+
+#[repr(transparent)]
+pub struct Pool {
+    raw: *mut apr_sys::apr_pool_t,
+    // !Send + !Sync:
+    _no_send: std::marker::PhantomData<*mut ()>,
+}
+
+impl Pool {
+    pub fn new() -> Result<Self, AprError> { /* create root */ }
+    pub fn with_child<R>(&self, f: impl FnOnce(&Pool) -> R) -> R { /* apr_pool_create_ex */ }
+}
+
+impl Drop for Pool { fn drop(&mut self){ unsafe { apr_sys::apr_pool_destroy(self.raw) } } }
+
+
+But: do not expose Pool in your top-level svn API unless an “advanced/zero-copy” feature is enabled. Normal users shouldn’t think about pools.
+
+Also provide a helper:
+
+pub(crate) fn with_tmp_pool<R>(f: impl FnOnce(&Pool) -> R) -> R { /* root->child->destroy */ }
+
+
+Use this around each FFI call so temporary allocations vanish deterministically.
+
+4) Lifetimes: owned vs borrowed
+
+Default: copy C data into Rust-owned types (String, Vec<u8>, PathBuf, SystemTime).
+
+Advanced: offer borrowed views tied to a Pool lifetime:
+
+pub struct BStr<'a>(&'a [u8]); // bytes from svn_string_t
+pub struct BStrUtf8<'a>(&'a str); // if you validate UTF-8
+
+pub struct DirEntry<'a> {
+    pub name: BStrUtf8<'a>,
+    pub kind: NodeKind,
+    // …
+    _pool: PhantomData<&'a Pool>,
+}
+
+
+Inside, convert:
+
+fn svn_string_as_bytes<'a>(s: *const svn_sys::svn_string_t) -> BStr<'a> { /* from data/len */ }
+
+
+Never return references that outlive the pool scope.
+
+5) Error handling
+
+Subversion uses an error chain (svn_error_t). Convert to a single Rust error that preserves code and a joined message:
+
+#[derive(thiserror::Error, Debug)]
+#[error("{message}")]
+pub struct SvnError {
+    pub code: i32,
+    pub message: String,
+}
+
+impl From<*mut svn_sys::svn_error_t> for SvnError {
+    fn from(mut e: *mut svn_sys::svn_error_t) -> Self {
+        let mut msgs = Vec::new();
+        let code = unsafe { (*e).apr_err };
+        while !e.is_null() {
+            unsafe {
+                let cstr = std::ffi::CStr::from_ptr((*e).message);
+                msgs.push(cstr.to_string_lossy().into_owned());
+                e = (*e).child;
+            }
+        }
+        unsafe { svn_sys::svn_error_clear(e) } // clear chain
+        Self { code, message: msgs.join(": ") }
+    }
+}
+
+
+Return Result<T, SvnError> everywhere.
+
+6) Strings, paths, and encodings
+
+svn_string_t/svn_stringbuf_t are byte sequences. Treat as &[u8] and validate UTF-8 only when needed.
+
+Paths: Subversion is byte-oriented; on Windows you’ll need normalization. Public API should take impl AsRef<Path> and convert to platform encoding inside the pool with svn_dirent_internal_style/svn_utf__* helpers as needed, but hand back PathBuf on Rust side.
+
+7) RAII wrappers for core handles
+
+Make thin, repr(transparent) newtypes with Drop:
+
+#[repr(transparent)]
+pub struct ClientCtx(*mut svn_sys::svn_client_ctx_t);
+impl ClientCtx {
+    pub fn new() -> Result<Self, SvnError> {
+        with_tmp_pool(|p| unsafe {
+            let mut ctx = std::ptr::null_mut();
+            svn_result(svn_sys::svn_client_create_context2(&mut ctx, std::ptr::null(), p.raw))?;
+            Ok(ClientCtx(ctx))
+        })
+    }
+}
+impl Drop for ClientCtx {
+    fn drop(&mut self) { /* nothing; ctx entries are pool-owned */ }
+}
+
+
+For handles whose lifetime is pool-bound, keep the pool inside the wrapper so it can’t outlive it:
+
+pub struct Client {
+    ctx: ClientCtx,
+    pool: Pool, // root keeping ctx alive
+}
+
+8) Cancel funcs, prompts, and other callbacks
+
+Expose Rust closures; store them in a Box and pass as a baton pointer. Provide an extern "C" trampoline:
+
+type CancelFn = dyn FnMut() -> bool + Send; // or not Send
+
+extern "C" fn cancel_trampoline(baton: *mut std::ffi::c_void) -> svn_sys::svn_error_t_ptr {
+    let f = unsafe { &mut *(baton as *mut Box<CancelFn>) };
+    if f() { std::ptr::null_mut() } else { /* return SVN_ERR_CANCELLED */ }
+}
+
+pub struct CancelHandle {
+    _boxed: Box<CancelFn>, // kept alive
+    baton: *mut c_void,
+}
+
+
+Do the same for log receivers and RA callbacks. Document reentrancy and threading.
+
+9) Public API sketch (owned by default)
+pub struct Client { /* holds ctx + root pool */ }
+
+impl Client {
+    pub fn new() -> Result<Self, SvnError> { /* … */ }
+
+    pub fn checkout(
+        &self,
+        url: &str,
+        dst: impl AsRef<std::path::Path>,
+        rev: Revision,            // enum { Head, Number(i64), Date(SystemTime) }
+        depth: Depth,             // enum mapping svn_depth_t
+        opts: CheckoutOpts,       // builder for ignore externals, etc.
+    ) -> Result<CheckoutReport, SvnError> {
+        with_tmp_pool(|p| unsafe {
+            // convert inputs into pool allocations
+            // call svn_client_checkout3
+            // gather outputs as owned Rust types
+        })
+    }
+
+    pub fn log(
+        &self,
+        path_or_url: &str,
+        range: RevRange,
+        mut receiver: impl FnMut(&LogEntry) -> ControlFlow<()> // stop early
+    ) -> Result<(), SvnError> {
+        // set up baton + trampoline + tmp pool per callback invocation, if needed
+    }
+}
+
+
+Provide *_borrowed variants behind a feature that return LogEntry<'pool> etc. for high-perf traversals.
+
+10) Concurrency and Send/Sync
+
+Mark pool-bound structs as !Send and !Sync (use a PhantomData<*mut ()>).
+
+It’s okay for high-level Client to be Send if you serialize operations internally or keep separate temporary pools per method call (APR pools aren’t thread-safe).
+
+Document: “You may call methods from multiple threads, but each method call is single-threaded and uses its own temporary pool.”
+
+11) Time and numbers
+
+apr_time_t is microseconds since Unix epoch. Convert with care:
+
+pub fn to_system_time(t: apr_sys::apr_time_t) -> std::time::SystemTime {
+    std::time::UNIX_EPOCH + std::time::Duration::from_micros(t as u64)
+}
+
+12) Testing strategy
+
+Spin up a throwaway repo in a temp dir via svnadmin create and file:// URLs for integration tests.
+
+CI matrix across Linux/macOS/Windows; link with system Subversion via pkg-config.
+
+Fuzz parsers of svn_opt_revision_t etc. with arbitrary/proptest.
+
+13) Practical pitfalls (watch out!)
+
+Pool lifetime leaks: never stash pool-allocated pointers in Rust structs that can outlive the pool. Either copy or tie with a lifetime.
+
+Error chains: always call svn_error_clear after converting, or you’ll leak.
+
+UTF-8 assumptions: log messages and author names are not guaranteed UTF-8. Validate/lossy.
+
+APR tables/hashes: wrap as iterators that copy keys/values; borrowed variants must carry the pool lifetime.
+
+Windows paths: normalize and use OsString↔byte conversions carefully.
+
+Minimal code slice: one safe call end-to-end
+pub fn svn_result(code: svn_sys::svn_error_t_ptr) -> Result<(), SvnError> {
+    if code.is_null() { Ok(()) } else { Err(SvnError::from(code)) }
+}
+
+impl Client {
+    pub fn username(&self) -> Result<Option<String>, SvnError> {
+        with_tmp_pool(|p| unsafe {
+            let mut name: *const std::os::raw::c_char = std::ptr::null();
+            svn_result(svn_sys::svn_client_get_username(&mut name, self.ctx.0, p.raw))?;
+            if name.is_null() { Ok(None) }
+            else {
+                Ok(Some(std::ffi::CStr::from_ptr(name).to_string_lossy().into_owned()))
+            }
+        })
+    }
+}
+
+TL;DR design rules
+
+Hide pools by default.
+
+Tie any borrowed data to a pool lifetime; otherwise copy.
+
+Wrap every handle in RAII; mark pool-bound types !Send/!Sync.
+
+Convert svn_error_t chains to a single Error.
+
+Use scoped temporary pools per call; keep a root pool to own long-lived handles like svn_client_ctx_t.
+
+Expose callbacks via closures with boxed batons + extern "C" trampolines.
+
+If you want, I can sketch a tiny svn::Client::checkout implementation skeleton you can drop into a new crate (with build.rs/pkg-config ready).
+
+Svn-rs - Checkout Skeleton
+· rust
+            let depth = svn_sys::svn_depth_infinity;
+            let ignore_externals = 0; // boolean
+
+
+            let err = svn_sys::svn_client_checkout3(
+                &mut result_rev as *mut _,
+                url_c.as_ptr(),
+                dst_c.as_ptr(),
+                ptr::null(), // peg revision
+                ptr::null(), // revision
+                depth,
+                ignore_externals,
+                ptr::null_mut(), // ctx - in real code, pass self.ctx
+                p.raw,
+            );
+
+
+            if !err.is_null() {
+                // convert error and clear it
+                let e = SvnError::from(err);
+                svn_sys::svn_error_clear(err);
+                return Err(e);
+            }
+
+
+            Ok(CheckoutReport { revision: result_rev })
+        })
+    }
+}
+
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        // in real code, nothing explicit required if ctx is pool-owned; pool Drop will clean up
+    }
+}
+
+
+// ---------- Small return types --------------------------------------------
+pub struct CheckoutReport {
+    pub revision: svn_sys::svn_revnum_t,
+}
+
+
+// ------------------------------- Notes ------------------------------------
+// - This is a sketch to show the pattern: create short-lived pools per FFI call, keep a root
+//   pool inside long-lived handles, convert svn errors to Rust Results, and copy C-owned
+//   data to Rust-owned types at API boundaries.
+// - A production crate should:
+//   * Arrange for svn_client_ctx_t to be allocated in the Client.root pool.
+//   * Carefully handle path encoding on Windows.
+//   * Provide borrowed variants (tied to pool lifetimes) behind a feature flag.
+//   * Provide safe wrappers for callbacks using boxed closures and trampolines.
+//   * Add proper SVN/APR initialization and thread cleanup.
+
+
+// Cargo/build notes (not included programmatically here):
+// - link to system apr and subversion libraries with pkg-config in build.rs.
+// - generate bindings with bindgen and expose them in `svn-sys` and `apr-sys`.
