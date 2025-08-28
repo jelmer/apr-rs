@@ -126,6 +126,16 @@ impl Pool {
         }
     }
 
+    /// Allocate a C string in the pool.
+    ///
+    /// The string is copied into pool-managed memory and will live as long as the pool.
+    pub fn pstrdup(&self, s: &str) -> *const std::ffi::c_char {
+        let c_str = std::ffi::CString::new(s).expect("Invalid C string");
+        unsafe {
+            apr_sys::apr_pstrdup(self.raw, c_str.as_ptr())
+        }
+    }
+
     /// Clear all memory in the pool.
     ///
     /// This does not actually free the memory, it just allows the pool to reuse this memory for the next allocation.

@@ -19,14 +19,13 @@ impl<'pool> StrMatch<'pool> {
     /// The pattern is compiled using an optimized algorithm (typically Boyer-Moore)
     /// for fast searching.
     pub fn new(pattern: &str, pool: &'pool Pool) -> Result<Self, crate::Error> {
-        let c_pattern = CString::new(pattern).map_err(|_| {
-            crate::Error::from_status(crate::Status::from(apr_sys::APR_EINVAL as i32))
-        })?;
+        // Allocate the pattern string in the pool to ensure it lives as long as needed
+        let c_pattern = pool.pstrdup(pattern);
 
         let compiled = unsafe {
             apr_sys::apr_strmatch_precompile(
                 pool.as_ptr() as *mut apr_sys::apr_pool_t,
-                c_pattern.as_ptr(),
+                c_pattern,
                 1, // case_sensitive
             )
         };
@@ -45,14 +44,13 @@ impl<'pool> StrMatch<'pool> {
 
     /// Precompile a case-insensitive pattern for efficient string matching.
     pub fn new_case_insensitive(pattern: &str, pool: &'pool Pool) -> Result<Self, crate::Error> {
-        let c_pattern = CString::new(pattern).map_err(|_| {
-            crate::Error::from_status(crate::Status::from(apr_sys::APR_EINVAL as i32))
-        })?;
+        // Allocate the pattern string in the pool to ensure it lives as long as needed
+        let c_pattern = pool.pstrdup(pattern);
 
         let compiled = unsafe {
             apr_sys::apr_strmatch_precompile(
                 pool.as_ptr() as *mut apr_sys::apr_pool_t,
-                c_pattern.as_ptr(),
+                c_pattern,
                 0, // case_insensitive
             )
         };
