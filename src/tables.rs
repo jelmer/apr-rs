@@ -3,6 +3,7 @@ pub use apr_sys::{apr_array_header_t, apr_table_t};
 use std::marker::PhantomData;
 
 /// A wrapper around an `apr_array_header_t`.
+#[derive(Debug)]
 pub struct ArrayHeader<'pool, T: Sized> {
     ptr: *mut apr_array_header_t,
     _phantom: PhantomData<(T, &'pool Pool)>,
@@ -44,6 +45,16 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         }
     }
 
+    /// Builder pattern: create array, reserve capacity, and populate
+    pub fn with_items<I: IntoIterator<Item = T>>(pool: &'pool Pool, items: I) -> Self {
+        let items: Vec<T> = items.into_iter().collect();
+        let mut array = Self::new_with_capacity(pool, items.len());
+        for item in items {
+            array.push(item);
+        }
+        array
+    }
+
     pub fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
         Self {
             ptr,
@@ -76,6 +87,43 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
             let ptr = apr_sys::apr_array_push(self.ptr);
             // copy item to the memory at ptr
             std::ptr::copy_nonoverlapping(&item, ptr as *mut T, 1);
+        }
+    }
+
+    /// Push an element and return self for chaining.
+    pub fn with_push(mut self, item: T) -> Self {
+        self.push(item);
+        self
+    }
+
+    /// Extend the array with items from an iterator (like Vec::extend).
+    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for item in iter {
+            self.push(item);
+        }
+    }
+
+    /// Extend the array with items and return self for chaining.
+    pub fn with_extend<I: IntoIterator<Item = T>>(mut self, iter: I) -> Self {
+        self.extend(iter);
+        self
+    }
+
+    /// Get the first element, if any.
+    pub fn first(&self) -> Option<T> {
+        if self.is_empty() {
+            None
+        } else {
+            self.nth(0)
+        }
+    }
+
+    /// Get the last element, if any.
+    pub fn last(&self) -> Option<T> {
+        if self.is_empty() {
+            None
+        } else {
+            self.nth(self.len() - 1)
         }
     }
 
@@ -118,6 +166,16 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         ArrayHeaderIterator::new(self)
     }
 
+    /// Create an enumerating iterator over the array (index, value).
+    pub fn iter_enumerated(&self) -> impl Iterator<Item = (usize, T)> + '_ {
+        (0..self.len()).map(move |i| (i, self.nth(i).unwrap()))
+    }
+
+    /// Create an iterator over just the indices.
+    pub fn indices(&self) -> impl Iterator<Item = usize> + '_ {
+        0..self.len()
+    }
+
     /// Return a pointer to the underlying `apr_array_header_t`.
     pub fn as_ptr(&self) -> *const apr_sys::apr_array_header_t {
         self.ptr
@@ -137,6 +195,7 @@ impl<'pool, T: Sized + Copy> std::ops::Index<usize> for ArrayHeader<'pool, T> {
 }
 
 /// An iterator over the elements of an `ArrayHeader`.
+#[derive(Debug)]
 pub struct ArrayHeaderIterator<'pool, T: Sized> {
     array: &'pool ArrayHeader<'pool, T>,
     index: usize,
@@ -161,6 +220,29 @@ impl<'a, T: Sized + Copy> Iterator for ArrayHeaderIterator<'a, T> {
     }
 }
 
+// Implement IntoIterator for ArrayHeader
+impl<'pool, T: Sized + Copy> IntoIterator for &'pool ArrayHeader<'pool, T> {
+    type Item = T;
+    type IntoIter = ArrayHeaderIterator<'pool, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ArrayHeaderIterator::new(self)
+    }
+}
+
+// Implement FromIterator for ArrayHeader
+impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
+    /// Create an ArrayHeader from an iterator.
+    pub fn from_iter<I: IntoIterator<Item = T>>(pool: &'pool Pool, iter: I) -> Self {
+        let mut array = Self::new(pool);
+        for item in iter {
+            array.push(item);
+        }
+        array
+    }
+}
+
+#[derive(Debug)]
 pub struct Table<'pool> {
     ptr: *mut apr_table_t,
     _phantom: PhantomData<&'pool Pool>,
@@ -283,6 +365,141 @@ impl<'pool> Table<'pool> {
             _phantom: PhantomData,
         }
     }
+
+    /// Get an iterator over the table's key-value pairs.
+    ///
+    /// This returns owned String values for safety and to avoid lifetime issues.
+    pub fn iter(&self) -> TableIterator {
+        TableIterator::new(self)
+    }
+
+    /// Return a pointer to the underlying apr_table_t.
+    pub fn as_ptr(&self) -> *const apr_table_t {
+        self.ptr
+    }
+
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_table_t {
+        self.ptr
+    }
+}
+
+/// Iterator over key-value pairs in an APR table.
+///
+/// This iterator yields owned (String, String) pairs for safety,
+/// as APR table entries may be modified while iterating.
+#[derive(Debug)]
+pub struct TableIterator<'a> {
+    table: &'a Table<'a>,
+    entries: Vec<(String, String)>,
+    index: usize,
+}
+
+impl<'a> TableIterator<'a> {
+    fn new(table: &'a Table<'a>) -> Self {
+        let mut entries = Vec::new();
+
+        // Use apr_table_do to iterate over all entries
+        extern "C" fn callback(
+            rec: *mut std::ffi::c_void,
+            key: *const std::ffi::c_char,
+            value: *const std::ffi::c_char,
+        ) -> std::ffi::c_int {
+            let entries = unsafe { &mut *(rec as *mut Vec<(String, String)>) };
+            let key = unsafe { std::ffi::CStr::from_ptr(key).to_string_lossy().into_owned() };
+            let value = unsafe {
+                std::ffi::CStr::from_ptr(value)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            entries.push((key, value));
+            1 // Continue iteration
+        }
+
+        unsafe {
+            apr_sys::apr_table_do(
+                Some(callback),
+                &mut entries as *mut Vec<(String, String)> as *mut std::ffi::c_void,
+                table.as_ptr(),
+                std::ptr::null::<std::ffi::c_char>(),
+            );
+        }
+
+        TableIterator {
+            table,
+            entries,
+            index: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for TableIterator<'a> {
+    type Item = (String, String);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.entries.len() {
+            let item = self.entries[self.index].clone();
+            self.index += 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
+
+// Implement IntoIterator for Table
+impl<'pool> IntoIterator for &'pool Table<'pool> {
+    type Item = (String, String);
+    type IntoIter = TableIterator<'pool>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TableIterator::new(self)
+    }
+}
+
+// Add FromIterator-like functionality for Table
+impl<'pool> Table<'pool> {
+    /// Create a Table from an iterator of key-value pairs.
+    pub fn from_iter<I: IntoIterator<Item = (String, String)>>(pool: &'pool Pool, iter: I) -> Self {
+        let mut table = Self::new_with_capacity(pool, 0);
+        for (key, value) in iter {
+            table.set(&key, &value);
+        }
+        table
+    }
+
+    /// Create a new empty table (convenience method).
+    pub fn new(pool: &'pool Pool) -> Self {
+        Self::new_with_capacity(pool, 0)
+    }
+
+    /// Insert or update a key-value pair (more HashMap-like).
+    pub fn insert(&mut self, key: &str, value: &str) {
+        self.set(key, value);
+    }
+
+    /// Insert a key-value pair and return self for chaining.
+    pub fn with_insert(mut self, key: &str, value: &str) -> Self {
+        self.insert(key, value);
+        self
+    }
+
+    /// Check if the table contains a key.
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.get(key).is_some()
+    }
+
+    /// Remove a key and return true if it existed.
+    pub fn remove(&mut self, key: &str) -> bool {
+        let existed = self.contains_key(key);
+        self.unset(key);
+        existed
+    }
+
+    /// Remove a key and return self for chaining.
+    pub fn with_remove(mut self, key: &str) -> Self {
+        self.remove(key);
+        self
+    }
 }
 
 #[cfg(test)]
@@ -337,5 +554,151 @@ mod tests {
         array.push("4");
 
         assert_eq!(array.iter().collect::<Vec<_>>(), vec!["1", "2", "3", "4"]);
+    }
+
+    #[test]
+    fn test_table_iterator() {
+        let pool = crate::pool::Pool::new();
+        let mut table = super::Table::new_with_capacity(&pool, 5);
+
+        table.set("key1", "value1");
+        table.set("key2", "value2");
+        table.set("key3", "value3");
+
+        let items: Vec<(String, String)> = table.iter().collect();
+        assert_eq!(items.len(), 3);
+
+        // Check that all key-value pairs are present (order may vary)
+        assert!(items.contains(&("key1".to_string(), "value1".to_string())));
+        assert!(items.contains(&("key2".to_string(), "value2".to_string())));
+        assert!(items.contains(&("key3".to_string(), "value3".to_string())));
+    }
+
+    #[test]
+    fn test_empty_table_iterator() {
+        let pool = crate::pool::Pool::new();
+        let table = super::Table::new_with_capacity(&pool, 5);
+
+        let items: Vec<(String, String)> = table.iter().collect();
+        assert_eq!(items.len(), 0);
+    }
+
+    #[test]
+    fn test_into_iterator() {
+        let pool = crate::pool::Pool::new();
+        let mut table = super::Table::new_with_capacity(&pool, 3);
+        table.set("a", "1");
+        table.set("b", "2");
+
+        let mut items: Vec<_> = (&table).into_iter().collect();
+        items.sort_by_key(|(k, _)| k.clone());
+
+        assert_eq!(
+            items,
+            vec![
+                ("a".to_string(), "1".to_string()),
+                ("b".to_string(), "2".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_array_into_iterator() {
+        let pool = crate::pool::Pool::new();
+        let mut array = super::ArrayHeader::new(&pool);
+        array.push(1);
+        array.push(2);
+        array.push(3);
+
+        let items: Vec<_> = (&array).into_iter().collect();
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_array_from_iter() {
+        let pool = crate::pool::Pool::new();
+        let data = vec![1, 2, 3, 4];
+        let array = super::ArrayHeader::from_iter(&pool, data);
+
+        assert_eq!(array.len(), 4);
+        assert_eq!(array[0], 1);
+        assert_eq!(array[3], 4);
+    }
+
+    #[test]
+    fn test_table_from_iter() {
+        let pool = crate::pool::Pool::new();
+        let data = vec![
+            ("key1".to_string(), "value1".to_string()),
+            ("key2".to_string(), "value2".to_string()),
+        ];
+        let table = super::Table::from_iter(&pool, data);
+
+        assert_eq!(table.get("key1"), Some("value1"));
+        assert_eq!(table.get("key2"), Some("value2"));
+    }
+
+    #[test]
+    fn test_array_extend_and_accessors() {
+        let pool = crate::pool::Pool::new();
+        let mut array = super::ArrayHeader::new(&pool);
+
+        array.extend(vec![1, 2, 3]);
+        assert_eq!(array.len(), 3);
+        assert_eq!(array.first(), Some(1));
+        assert_eq!(array.last(), Some(3));
+
+        let array2 = super::ArrayHeader::with_items(&pool, vec![10, 20, 30]);
+        assert_eq!(array2.len(), 3);
+        assert_eq!(array2[1], 20);
+    }
+
+    #[test]
+    fn test_table_hashmap_like_api() {
+        let pool = crate::pool::Pool::new();
+        let mut table = super::Table::new(&pool);
+
+        table.insert("key1", "value1");
+        assert!(table.contains_key("key1"));
+        assert!(!table.contains_key("nonexistent"));
+
+        assert!(table.remove("key1"));
+        assert!(!table.remove("key1")); // Second remove returns false
+        assert!(!table.contains_key("key1"));
+    }
+
+    #[test]
+    fn test_fluent_apis() {
+        let pool = crate::pool::Pool::new();
+
+        // Array fluent API
+        let array = super::ArrayHeader::new(&pool)
+            .with_push(1)
+            .with_push(2)
+            .with_extend(vec![3, 4, 5]);
+        assert_eq!(array.len(), 5);
+        assert_eq!(array.last(), Some(5));
+
+        // Table fluent API
+        let table = super::Table::new(&pool)
+            .with_insert("key1", "value1")
+            .with_insert("key2", "value2")
+            .with_remove("key2");
+        assert!(table.contains_key("key1"));
+        assert!(!table.contains_key("key2"));
+    }
+
+    #[test]
+    fn test_advanced_iterators() {
+        let pool = crate::pool::Pool::new();
+        let array = super::ArrayHeader::with_items(&pool, vec![10, 20, 30]);
+
+        // Test enumerated iterator
+        let enumerated: Vec<_> = array.iter_enumerated().collect();
+        assert_eq!(enumerated, vec![(0, 10), (1, 20), (2, 30)]);
+
+        // Test indices iterator
+        let indices: Vec<_> = array.indices().collect();
+        assert_eq!(indices, vec![0, 1, 2]);
     }
 }

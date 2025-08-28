@@ -74,6 +74,12 @@ impl From<std::ffi::NulError> for Error {
     }
 }
 
+impl From<std::str::Utf8Error> for Error {
+    fn from(err: std::str::Utf8Error) -> Self {
+        Error::from_status(Status::BadArgument).with_source(err)
+    }
+}
+
 /// Result type using the improved Error
 pub type Result<T> = std::result::Result<T, Error>;
 

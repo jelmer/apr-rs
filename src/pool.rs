@@ -23,6 +23,12 @@ macro_rules! pool_debug {
     };
 }
 
+impl Default for Pool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Pool {
     /// Create a new pool.
     pub fn new() -> Self {
@@ -131,9 +137,7 @@ impl Pool {
     /// The string is copied into pool-managed memory and will live as long as the pool.
     pub fn pstrdup(&self, s: &str) -> *const std::ffi::c_char {
         let c_str = std::ffi::CString::new(s).expect("Invalid C string");
-        unsafe {
-            apr_sys::apr_pstrdup(self.raw, c_str.as_ptr())
-        }
+        unsafe { apr_sys::apr_pstrdup(self.raw, c_str.as_ptr()) }
     }
 
     /// Clear all memory in the pool.
@@ -210,12 +214,6 @@ impl Pool {
     /// Try to join two pools.
     #[cfg(not(feature = "pool-debug"))]
     pub fn join(&self, _other: &Pool) {}
-}
-
-impl Default for Pool {
-    fn default() -> Self {
-        Pool::new()
-    }
 }
 
 impl Drop for Pool {

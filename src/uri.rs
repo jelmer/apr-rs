@@ -5,6 +5,7 @@ use std::ffi::CStr;
 use std::marker::PhantomData;
 
 /// A structure to represent a URI.
+#[derive(Debug)]
 pub struct Uri<'pool> {
     ptr: *mut apr_uri_t,
     _pool: PhantomData<&'pool Pool>,
@@ -183,6 +184,37 @@ impl<'pool> Uri<'pool> {
         } else {
             Err(status)
         }
+    }
+
+    /// Get a raw pointer to the underlying apr_uri_t
+    pub fn as_ptr(&self) -> *const apr_uri_t {
+        self.ptr
+    }
+
+    /// Get a mutable raw pointer to the underlying apr_uri_t
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_uri_t {
+        self.ptr
+    }
+}
+
+// Add Display implementation
+impl<'pool> std::fmt::Display for Uri<'pool> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.unparse(0))
+    }
+}
+
+// Add PartialEq implementation
+impl<'pool> PartialEq for Uri<'pool> {
+    fn eq(&self, other: &Self) -> bool {
+        self.unparse(0) == other.unparse(0)
+    }
+}
+
+// Add AsRef implementations for easy access to string parts
+impl<'pool> AsRef<str> for Uri<'pool> {
+    fn as_ref(&self) -> &str {
+        self.scheme().unwrap_or("")
     }
 }
 
