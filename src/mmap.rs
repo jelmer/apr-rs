@@ -27,7 +27,13 @@ impl From<MmapFlag> for i32 {
 }
 
 impl<'a> Mmap<'a> {
-    pub fn create(
+    /// Create a new memory map.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the `file` pointer is valid and properly
+    /// initialized for the lifetime of the memory map.
+    pub unsafe fn create(
         file: *mut apr_sys::apr_file_t,
         offset: i64,
         size: usize,
@@ -36,16 +42,14 @@ impl<'a> Mmap<'a> {
     ) -> Result<Self> {
         let mut mmap: *mut apr_sys::apr_mmap_t = ptr::null_mut();
 
-        let status = unsafe {
-            apr_sys::apr_mmap_create(
-                &mut mmap,
-                file,
-                offset as apr_sys::apr_off_t,
-                size,
-                flag.into(),
-                pool.as_mut_ptr(),
-            )
-        };
+        let status = apr_sys::apr_mmap_create(
+            &mut mmap,
+            file,
+            offset as apr_sys::apr_off_t,
+            size,
+            flag.into(),
+            pool.as_mut_ptr(),
+        );
 
         if status != apr_sys::APR_SUCCESS as i32 {
             return Err(crate::Error::from_status(status.into()));
@@ -148,13 +152,15 @@ mod tests {
             File::open(temp_path, OpenFlags::READ, apr_sys::APR_UREAD as i32, &pool).unwrap();
 
         // Create memory map
-        let mmap = Mmap::create(
-            file.as_mut_ptr(),
-            0,
-            test_content.len(),
-            MmapFlag::Read,
-            &pool,
-        )
+        let mmap = unsafe {
+            Mmap::create(
+                file.as_mut_ptr(),
+                0,
+                test_content.len(),
+                MmapFlag::Read,
+                &pool,
+            )
+        }
         .unwrap();
 
         // Verify mapped content
@@ -189,13 +195,15 @@ mod tests {
             File::open(temp_path, OpenFlags::READ, apr_sys::APR_UREAD as i32, &pool).unwrap();
 
         // Create original memory map
-        let mmap1 = Mmap::create(
-            file.as_mut_ptr(),
-            0,
-            test_content.len(),
-            MmapFlag::Read,
-            &pool,
-        )
+        let mmap1 = unsafe {
+            Mmap::create(
+                file.as_mut_ptr(),
+                0,
+                test_content.len(),
+                MmapFlag::Read,
+                &pool,
+            )
+        }
         .unwrap();
 
         // Duplicate the memory map
@@ -233,7 +241,8 @@ mod tests {
             File::open(temp_path, OpenFlags::READ, apr_sys::APR_UREAD as i32, &pool).unwrap();
 
         // Memory map small file
-        let mmap = Mmap::create(file.as_ptr() as *mut _, 0, 1, MmapFlag::Read, &pool).unwrap();
+        let mmap =
+            unsafe { Mmap::create(file.as_ptr() as *mut _, 0, 1, MmapFlag::Read, &pool) }.unwrap();
 
         assert_eq!(mmap.as_bytes(), b"x");
         assert_eq!(mmap.size(), 1);
