@@ -36,6 +36,66 @@ pub use status::Status;
 pub use apr_sys::apr_status_t;
 pub use apr_sys::apr_time_t;
 
+/// Create an APR array with initial values.
+///
+/// # Examples
+/// ```
+/// # use apr::{Pool, apr_array};
+/// let pool = Pool::new();
+/// let arr = apr_array![&pool; 1, 2, 3, 4];
+/// assert_eq!(arr.len(), 4);
+/// ```
+#[macro_export]
+macro_rules! apr_array {
+    ($pool:expr; $($item:expr),* $(,)?) => {{
+        let mut array = $crate::tables::ArrayHeader::new($pool);
+        $(
+            array.push($item);
+        )*
+        array
+    }};
+}
+
+/// Create an APR table with initial key-value pairs.
+///
+/// # Examples  
+/// ```
+/// # use apr::{Pool, apr_table};
+/// let pool = Pool::new();
+/// let table = apr_table![&pool; "key1" => "value1", "key2" => "value2"];
+/// assert_eq!(table.get("key1"), Some("value1"));
+/// ```
+#[macro_export]
+macro_rules! apr_table {
+    ($pool:expr; $($key:expr => $value:expr),* $(,)?) => {{
+        let mut table = $crate::tables::Table::new($pool);
+        $(
+            table.insert($key, $value);
+        )*
+        table
+    }};
+}
+
+/// Create an APR hash with initial key-value pairs.
+///
+/// # Examples
+/// ```
+/// # use apr::{Pool, apr_hash};
+/// let pool = Pool::new();
+/// let hash = apr_hash![&pool; "key1" => &"value1", "key2" => &"value2"];
+/// assert_eq!(hash.get("key1"), Some(&"value1"));
+/// ```
+#[macro_export]
+macro_rules! apr_hash {
+    ($pool:expr; $($key:expr => $value:expr),* $(,)?) => {{
+        let mut hash = $crate::hash::Hash::new($pool);
+        $(
+            hash.insert($key, $value);
+        )*
+        hash
+    }};
+}
+
 #[ctor::ctor]
 fn init() {
     unsafe {

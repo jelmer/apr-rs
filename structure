@@ -14,24 +14,7 @@ Keep -sys crates separate so consumers with exotic link setups can swap them.
 
 2) Initialization
 
-APR/SVN require one-time init & per-thread cleanup in C land.
-
-use std::sync::OnceLock;
-
-pub fn init() -> Result<(), SvnError> {
-    static ONCE: OnceLock<()> = OnceLock::new();
-    ONCE.get_or_init(|| {
-        unsafe {
-            apr_sys::apr_initialize();
-            // svn_dso_initialize2(NULL, NULL) usually not needed client-side.
-            svn_sys::svn_dso_initialize2(std::ptr::null_mut(), std::ptr::null_mut());
-        }
-    });
-    Ok(())
-}
-
-
-Call this from your crate entry points so users rarely see it.
+APR requires one-time init which is handled automatically via ctor in this crate.
 
 3) APR pool wrapper (hidden by default)
 

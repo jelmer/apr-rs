@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 ///
 /// This represents bytes from C strings, potentially containing non-UTF-8 data.
 /// Use this when you need zero-copy access to C string data.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BStr<'a> {
     data: &'a [u8],
     _pool: PhantomData<&'a Pool>,
@@ -67,8 +67,64 @@ impl<'a> AsRef<[u8]> for BStr<'a> {
     }
 }
 
+impl<'a> std::ops::Deref for BStr<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+
+impl<'a> std::fmt::Display for BStr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(self.data))
+    }
+}
+
+impl<'a> From<&'a [u8]> for BStr<'a> {
+    fn from(data: &'a [u8]) -> Self {
+        BStr {
+            data,
+            _pool: PhantomData,
+        }
+    }
+}
+
+impl<'a> From<&'a str> for BStr<'a> {
+    fn from(s: &'a str) -> Self {
+        BStr {
+            data: s.as_bytes(),
+            _pool: PhantomData,
+        }
+    }
+}
+
+impl<'a> std::borrow::Borrow<[u8]> for BStr<'a> {
+    fn borrow(&self) -> &[u8] {
+        self.data
+    }
+}
+
+impl<'a> PartialEq<&str> for BStr<'a> {
+    fn eq(&self, other: &&str) -> bool {
+        self.data == other.as_bytes()
+    }
+}
+
+impl<'a> PartialEq<str> for BStr<'a> {
+    fn eq(&self, other: &str) -> bool {
+        self.data == other.as_bytes()
+    }
+}
+
+impl<'a> PartialEq<&[u8]> for BStr<'a> {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.data == *other
+    }
+}
+
 /// UTF-8 validated borrowed string backed by pool memory
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BStrUtf8<'a> {
     data: &'a str,
     _pool: PhantomData<&'a Pool>,
@@ -119,9 +175,56 @@ impl<'a> AsRef<str> for BStrUtf8<'a> {
     }
 }
 
+impl<'a> std::ops::Deref for BStrUtf8<'a> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+
 impl<'a> std::fmt::Display for BStrUtf8<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.data)
+    }
+}
+
+impl<'a> From<&'a str> for BStrUtf8<'a> {
+    fn from(data: &'a str) -> Self {
+        BStrUtf8 {
+            data,
+            _pool: PhantomData,
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for BStrUtf8<'a> {
+    type Error = std::str::Utf8Error;
+
+    fn try_from(data: &'a [u8]) -> Result<Self, Self::Error> {
+        let s = std::str::from_utf8(data)?;
+        Ok(BStrUtf8 {
+            data: s,
+            _pool: PhantomData,
+        })
+    }
+}
+
+impl<'a> std::borrow::Borrow<str> for BStrUtf8<'a> {
+    fn borrow(&self) -> &str {
+        self.data
+    }
+}
+
+impl<'a> PartialEq<&str> for BStrUtf8<'a> {
+    fn eq(&self, other: &&str) -> bool {
+        self.data == *other
+    }
+}
+
+impl<'a> PartialEq<String> for BStrUtf8<'a> {
+    fn eq(&self, other: &String) -> bool {
+        self.data == other.as_str()
     }
 }
 
@@ -288,5 +391,70 @@ mod tests {
         let pooled = pstrdup("hello", &pool).unwrap();
         assert_eq!(format!("{}", pooled), "hello");
         assert_eq!(format!("{:?}", pooled), "PoolString(\"hello\")");
+    }
+
+    #[test]
+    fn test_bstr_traits() {
+        let data = b"hello world";
+        let bstr = BStr::from(&data[..]);
+
+        // Test Clone, Copy
+        let bstr2 = bstr;
+        let bstr3 = bstr.clone();
+        assert_eq!(bstr, bstr2);
+        assert_eq!(bstr2, bstr3);
+
+        // Test Display and Deref
+        assert_eq!(format!("{}", bstr), "hello world");
+        assert_eq!(bstr.len(), 11);
+        assert_eq!(&bstr[0..5], b"hello");
+
+        // Test From conversions
+        let from_str = BStr::from("test");
+        assert_eq!(from_str.as_bytes(), b"test");
+    }
+
+    #[test]
+    fn test_bstr_utf8_traits() {
+        let s = "hello 🦀";
+        let bstr_utf8 = BStrUtf8::from(s);
+
+        // Test Clone, Copy, PartialEq
+        let bstr2 = bstr_utf8;
+        assert_eq!(bstr_utf8, bstr2);
+
+        // Test Display and Deref
+        assert_eq!(format!("{}", bstr_utf8), "hello 🦀");
+        assert_eq!(bstr_utf8.len(), 10); // UTF-8 bytes
+
+        // Test TryFrom
+        let from_bytes = BStrUtf8::try_from("hello".as_bytes()).unwrap();
+        assert_eq!(from_bytes.as_str(), "hello");
+
+        // Test invalid UTF-8
+        let invalid = BStrUtf8::try_from(&[0xFF, 0xFF][..]);
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn test_advanced_string_traits() {
+        // Test BStr with various PartialEq implementations
+        let bstr = BStr::from("hello");
+        assert_eq!(bstr, "hello");
+        assert_eq!(bstr, "hello");
+        assert_eq!(bstr, &b"hello"[..]);
+
+        // Test Borrow trait
+        let borrowed: &[u8] = std::borrow::Borrow::borrow(&bstr);
+        assert_eq!(borrowed, b"hello");
+
+        // Test BStrUtf8 PartialEq implementations
+        let bstr_utf8 = BStrUtf8::from("hello");
+        assert_eq!(bstr_utf8, "hello");
+        assert_eq!(bstr_utf8, String::from("hello"));
+
+        // Test Borrow trait for BStrUtf8
+        let borrowed: &str = std::borrow::Borrow::borrow(&bstr_utf8);
+        assert_eq!(borrowed, "hello");
     }
 }

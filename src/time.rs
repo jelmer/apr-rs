@@ -83,6 +83,50 @@ impl From<apr_time_t> for Time {
     }
 }
 
+impl Default for Time {
+    fn default() -> Self {
+        Self::now()
+    }
+}
+
+impl std::fmt::Display for Time {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.rfc822_date())
+    }
+}
+
+impl AsRef<apr_time_t> for Time {
+    fn as_ref(&self) -> &apr_time_t {
+        &self.0
+    }
+}
+
+// Add arithmetic operations for Time
+impl std::ops::Add<std::time::Duration> for Time {
+    type Output = Time;
+
+    fn add(self, duration: std::time::Duration) -> Self::Output {
+        Time(self.0 + duration.as_micros() as apr_time_t)
+    }
+}
+
+impl std::ops::Sub<std::time::Duration> for Time {
+    type Output = Time;
+
+    fn sub(self, duration: std::time::Duration) -> Self::Output {
+        Time(self.0.saturating_sub(duration.as_micros() as apr_time_t))
+    }
+}
+
+impl std::ops::Sub<Time> for Time {
+    type Output = std::time::Duration;
+
+    fn sub(self, other: Time) -> Self::Output {
+        let micros_diff = self.0.saturating_sub(other.0) as u64;
+        std::time::Duration::from_micros(micros_diff)
+    }
+}
+
 type Interval = apr_interval_time_t;
 
 /// Sleep for the given interval.
@@ -147,5 +191,32 @@ mod tests {
             .duration_since(system_time)
             .unwrap_or_else(|_| system_time.duration_since(converted_back).unwrap());
         assert!(diff < Duration::from_millis(1));
+    }
+
+    #[test]
+    fn test_time_traits() {
+        let time1 = Time::now();
+        let time2 = Time::default(); // Should be same as now()
+
+        // Test Display
+        let display_str = format!("{}", time1);
+        assert!(display_str.contains("GMT")); // RFC822 format
+
+        // Test arithmetic operations
+        let duration = std::time::Duration::from_secs(60);
+        let time_plus = time1 + duration;
+        let time_minus = time_plus - duration;
+
+        // Should be approximately equal (within reasonable margin)
+        let diff = if time1.as_micros() > time_minus.as_micros() {
+            time1 - time_minus
+        } else {
+            time_minus - time1
+        };
+        assert!(diff < std::time::Duration::from_secs(1)); // 1 second margin for test stability
+
+        // Test AsRef
+        let time_ref: &apr_time_t = time1.as_ref();
+        assert_eq!(*time_ref, time1.as_micros());
     }
 }
