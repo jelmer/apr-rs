@@ -7,22 +7,28 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr;
 use std::time::Duration;
 
+/// Network socket
 #[repr(transparent)]
 pub struct Socket<'a> {
     raw: *mut apr_sys::apr_socket_t,
     _phantom: PhantomData<&'a Pool>,
 }
 
+/// Socket address
 #[repr(transparent)]
 pub struct SockAddr<'a> {
     raw: *mut apr_sys::apr_sockaddr_t,
     _phantom: PhantomData<&'a Pool>,
 }
 
+/// Socket address family
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketFamily {
+    /// IPv4
     Inet,
+    /// IPv6
     Inet6,
+    /// Unix domain socket
     Unix,
 }
 
@@ -36,9 +42,12 @@ impl From<SocketFamily> for i32 {
     }
 }
 
+/// Socket type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketType {
+    /// Stream socket (TCP)
     Stream,
+    /// Datagram socket (UDP)
     Dgram,
 }
 
@@ -51,9 +60,12 @@ impl From<SocketType> for i32 {
     }
 }
 
+/// Socket protocol
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketProtocol {
+    /// TCP protocol
     Tcp,
+    /// UDP protocol
     Udp,
 }
 
@@ -66,15 +78,24 @@ impl From<SocketProtocol> for i32 {
     }
 }
 
+/// Socket options
 #[derive(Debug, Clone, Copy)]
 pub enum SocketOption {
+    /// Linger on close
     Linger,
+    /// Keep connection alive
     KeepAlive,
+    /// Enable debugging
     Debug,
+    /// Non-blocking mode
     NonBlock,
+    /// Reuse address
     ReuseAddr,
+    /// Send buffer size
     Sndbuf,
+    /// Receive buffer size
     Rcvbuf,
+    /// Disconnect on reset
     DisconnectOnReset,
 }
 
@@ -94,6 +115,7 @@ impl From<SocketOption> for i32 {
 }
 
 impl<'a> SockAddr<'a> {
+    /// Create a new IPv4 socket address
     pub fn new_inet(addr: Ipv4Addr, port: u16, pool: &'a Pool) -> Result<Self> {
         let mut sockaddr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
@@ -122,6 +144,7 @@ impl<'a> SockAddr<'a> {
         })
     }
 
+    /// Create a new IPv6 socket address
     pub fn new_inet6(addr: Ipv6Addr, port: u16, pool: &'a Pool) -> Result<Self> {
         let mut sockaddr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
@@ -150,6 +173,7 @@ impl<'a> SockAddr<'a> {
         })
     }
 
+    /// Create a socket address for any interface
     pub fn new_any(port: u16, family: SocketFamily, pool: &'a Pool) -> Result<Self> {
         let mut sockaddr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
@@ -174,24 +198,29 @@ impl<'a> SockAddr<'a> {
         })
     }
 
+    /// Get the port number
     pub fn port(&self) -> u16 {
         unsafe { (*self.raw).port as u16 }
     }
 
+    /// Get the address family
     pub fn family(&self) -> i32 {
         unsafe { (*self.raw).family }
     }
 
+    /// Get a raw pointer to the underlying APR socket address
     pub fn as_ptr(&self) -> *const apr_sys::apr_sockaddr_t {
         self.raw
     }
 
+    /// Get a mutable raw pointer to the underlying APR socket address
     pub fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_sockaddr_t {
         self.raw
     }
 }
 
 impl<'a> Socket<'a> {
+    /// Create a new socket
     pub fn new(
         family: SocketFamily,
         sock_type: SocketType,
@@ -220,6 +249,7 @@ impl<'a> Socket<'a> {
         })
     }
 
+    /// Bind the socket to an address
     pub fn bind(&mut self, addr: &SockAddr) -> Result<()> {
         let status = unsafe { apr_sys::apr_socket_bind(self.raw, addr.raw) };
 
@@ -229,6 +259,7 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    /// Listen for incoming connections
     pub fn listen(&mut self, backlog: i32) -> Result<()> {
         let status = unsafe { apr_sys::apr_socket_listen(self.raw, backlog) };
 
@@ -238,6 +269,7 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    /// Accept an incoming connection
     pub fn accept(&mut self, pool: &'a Pool) -> Result<Socket<'a>> {
         let mut new_socket: *mut apr_sys::apr_socket_t = ptr::null_mut();
 
@@ -254,6 +286,7 @@ impl<'a> Socket<'a> {
         })
     }
 
+    /// Connect to a remote address
     pub fn connect(&mut self, addr: &SockAddr) -> Result<()> {
         let status = unsafe { apr_sys::apr_socket_connect(self.raw, addr.raw) };
 
@@ -263,6 +296,7 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    /// Send data on the socket
     pub fn send(&mut self, data: &[u8]) -> Result<usize> {
         let mut len = data.len();
         let status =
@@ -275,6 +309,7 @@ impl<'a> Socket<'a> {
         Ok(len)
     }
 
+    /// Receive data from the socket
     pub fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut len = buf.len();
         let status =
@@ -287,6 +322,7 @@ impl<'a> Socket<'a> {
         Ok(len)
     }
 
+    /// Send data to a specific address (for datagram sockets)
     pub fn sendto(&mut self, data: &[u8], addr: &SockAddr) -> Result<usize> {
         let mut len = data.len();
         let status = unsafe {
@@ -300,6 +336,7 @@ impl<'a> Socket<'a> {
         Ok(len)
     }
 
+    /// Receive data and sender address (for datagram sockets)
     pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool) -> Result<(usize, SockAddr)> {
         let mut len = buf.len();
         let from_addr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
@@ -326,6 +363,7 @@ impl<'a> Socket<'a> {
         Ok((len, addr))
     }
 
+    /// Set a socket option
     pub fn set_opt(&mut self, opt: SocketOption, value: i32) -> Result<()> {
         let status = unsafe { apr_sys::apr_socket_opt_set(self.raw, opt.into(), value) };
 
@@ -335,6 +373,7 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    /// Get a socket option value
     pub fn get_opt(&self, opt: SocketOption) -> Result<i32> {
         let mut value: i32 = 0;
         let status = unsafe { apr_sys::apr_socket_opt_get(self.raw, opt.into(), &mut value) };
@@ -345,6 +384,7 @@ impl<'a> Socket<'a> {
         Ok(value)
     }
 
+    /// Set the socket timeout
     pub fn timeout_set(&mut self, timeout: Duration) -> Result<()> {
         let micros = timeout.as_micros() as apr_sys::apr_interval_time_t;
         let status = unsafe { apr_sys::apr_socket_timeout_set(self.raw, micros) };
@@ -355,6 +395,7 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    /// Get the socket timeout
     pub fn timeout_get(&self) -> Result<Duration> {
         let mut timeout: apr_sys::apr_interval_time_t = 0;
         let status = unsafe { apr_sys::apr_socket_timeout_get(self.raw, &mut timeout) };
@@ -366,6 +407,7 @@ impl<'a> Socket<'a> {
         Ok(Duration::from_micros(timeout as u64))
     }
 
+    /// Shutdown the socket
     pub fn shutdown(&mut self, how: SocketShutdown) -> Result<()> {
         let status = unsafe { apr_sys::apr_socket_shutdown(self.raw, how.into()) };
 
@@ -375,19 +417,25 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    /// Get a raw pointer to the underlying APR socket
     pub fn as_ptr(&self) -> *const apr_sys::apr_socket_t {
         self.raw
     }
 
+    /// Get a mutable raw pointer to the underlying APR socket
     pub fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_socket_t {
         self.raw
     }
 }
 
+/// Socket shutdown options
 #[derive(Debug, Clone, Copy)]
 pub enum SocketShutdown {
+    /// Shutdown reading
     Read,
+    /// Shutdown writing
     Write,
+    /// Shutdown both reading and writing
     Both,
 }
 
@@ -409,6 +457,7 @@ impl<'a> Drop for Socket<'a> {
     }
 }
 
+/// Get the hostname of the local machine
 pub fn hostname_get(pool: &Pool) -> Result<String> {
     let hostname_buf = unsafe { apr_sys::apr_palloc(pool.as_mut_ptr(), 256) as *mut i8 };
 

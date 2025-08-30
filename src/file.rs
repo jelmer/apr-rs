@@ -10,19 +10,33 @@ pub use apr_sys::apr_file_t;
 pub struct OpenFlags(i32);
 
 impl OpenFlags {
+    /// Open file for reading
     pub const READ: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_READ as i32);
+    /// Open file for writing
     pub const WRITE: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_WRITE as i32);
+    /// Create file if it doesn't exist
     pub const CREATE: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_CREATE as i32);
+    /// Open file in append mode
     pub const APPEND: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_APPEND as i32);
+    /// Truncate file if it exists
     pub const TRUNCATE: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_TRUNCATE as i32);
+    /// Open file in binary mode
     pub const BINARY: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_BINARY as i32);
+    /// Fail if file exists (used with CREATE)
     pub const EXCL: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_EXCL as i32);
+    /// Open file with buffering
     pub const BUFFERED: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_BUFFERED as i32);
+    /// Delete file when closed
     pub const DELONCLOSE: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_DELONCLOSE as i32);
+    /// Platform-dependent thread-safe mode
     pub const XTHREAD: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_XTHREAD as i32);
+    /// Platform-dependent shared lock mode
     pub const SHARELOCK: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_SHARELOCK as i32);
+    /// Don't register cleanup when pool is destroyed
     pub const NOCLEANUP: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_NOCLEANUP as i32);
+    /// Advisory flag for sendfile support
     pub const SENDFILE_ENABLED: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_SENDFILE_ENABLED as i32);
+    /// Platform-dependent large file support
     pub const LARGEFILE: OpenFlags = OpenFlags(apr_sys::APR_FOPEN_LARGEFILE as i32);
 
     /// Combine multiple flags

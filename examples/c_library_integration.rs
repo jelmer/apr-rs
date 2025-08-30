@@ -74,7 +74,7 @@ impl CLibraryWrapper {
     pub fn process_data(&self, data: &str) -> Result<()> {
         // Convert Rust string to C string
         let c_data = CString::new(data).map_err(|_| {
-            apr::Error::from(Status::from_code(apr::status::APR_EINVAL))
+            apr::Error::from(Status::from(apr_sys::APR_EINVAL as i32))
         })?;
         
         // Call the C function
@@ -99,7 +99,7 @@ impl CLibraryWrapper {
         F: FnOnce(&Pool) -> Result<R>,
     {
         // Create a subpool for this operation
-        let subpool = self.pool.create_subpool()?;
+        let subpool = Pool::new();
         
         // Execute the operation with the subpool
         let result = operation(&subpool);

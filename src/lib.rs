@@ -1,3 +1,5 @@
+#![deny(missing_docs)]
+
 //! Safe Rust bindings for the Apache Portable Runtime (APR) library.
 //!
 //! This crate provides safe Rust abstractions over the Apache Portable Runtime (APR) and 
@@ -84,30 +86,55 @@
 //! - Memory pools ensure proper cleanup when dropped
 //! - The crate leverages Rust's ownership system for resource management
 
+/// Base64 encoding and decoding
 pub mod base64;
+/// Callback function types and utilities
 pub mod callbacks;
+/// Cryptographic operations (encryption, decryption)
 pub mod crypto;
+/// Date parsing and formatting utilities
 pub mod date;
+/// Error types and result handling
 pub mod error;
+/// File I/O operations
 pub mod file;
+/// Command-line option parsing
 pub mod getopt;
+/// Hash table data structure
 pub mod hash;
+/// MD5 hashing functions
 pub mod md5;
+/// Memory-mapped file support
 pub mod mmap;
+/// Network I/O and socket operations
 pub mod network;
+/// File path manipulation utilities
 pub mod paths;
+/// Memory pool management
 pub mod pool;
+/// Thread-safe queue data structure
 pub mod queue;
+/// SHA1 hashing functions
 pub mod sha1;
+/// APR status codes
 pub mod status;
+/// String manipulation utilities
 pub mod strings;
+/// String pattern matching
 pub mod strmatch;
+/// APR table data structure (ordered key-value pairs)
 pub mod tables;
+/// Time handling and conversion
 pub mod time;
+/// URI parsing and manipulation
 pub mod uri;
+/// UUID generation
 pub mod uuid;
+/// Version information
 pub mod versions;
+/// Character set translation
 pub mod xlate;
+/// XML parsing utilities
 pub mod xml;
 
 pub use error::{Error, ErrorContext, Result};
