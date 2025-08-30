@@ -16,6 +16,7 @@ pub mod mmap;
 pub mod network;
 pub mod paths;
 pub mod pool;
+pub mod queue;
 pub mod sha1;
 pub mod status;
 pub mod strings;

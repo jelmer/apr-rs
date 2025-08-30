@@ -46,6 +46,7 @@ fn create_bindings(
         .header(apu_path.join("apr_xlate.h").to_str().unwrap())
         .header(apu_path.join("apr_xml.h").to_str().unwrap())
         .header(apu_path.join("apr_crypto.h").to_str().unwrap())
+        .header(apu_path.join("apr_queue.h").to_str().unwrap())
         .header_contents("sys_socket.h", "#include <sys/socket.h>")
         .header_contents("sys_types.h", "#include <sys/types.h>")
         .allowlist_file(".*/apr.h")
@@ -81,6 +82,7 @@ fn create_bindings(
         .allowlist_file(".*/apr_xlate.h")
         .allowlist_file(".*/apr_xml.h")
         .allowlist_file(".*/apr_crypto.h")
+        .allowlist_file(".*/apr_queue.h")
         .allowlist_file(".*/apr_portable.h")
         .allowlist_file(".*/apr_support.h")
         .clang_args(
