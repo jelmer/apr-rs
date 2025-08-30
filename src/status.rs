@@ -4,52 +4,96 @@
 pub type StatusCode = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(missing_docs)]
+/// APR status codes that can be returned from various operations.
 pub enum Status {
+    /// Operation completed successfully.
     Success,                 // APR_SUCCESS
+    /// Could not perform a stat on the file.
     NoStat,                  // APR_ENOSTAT
+    /// Could not create a new pool.
     NoPool,                  // APR_ENOPOOL
+    /// An invalid date has been provided.
     BadDate,                 // APR_EBADDATE
+    /// An invalid socket was specified.
     InvalidSocket,           // APR_EINVALSOCK
+    /// No process was specified.
     NoProcess,               // APR_ENOPROC
+    /// No time was specified.
     NoTime,                  // APR_ENOTIME
+    /// No directory was specified.
     NoDirectory,             // APR_ENODIR
+    /// No lock was specified.
     NoLock,                  // APR_ENOLOCK
+    /// No poll was specified.
     NoPoll,                  // APR_ENOPOLL
+    /// No socket was specified.
     NoSocket,                // APR_ENOSOCKET
+    /// No thread was specified.
     NoThread,                // APR_ENOTHREAD
+    /// No thread key was specified.
     NoThreadKey,             // APR_ENOTHDKEY
+    /// There is no shared memory available.
     NoSharedMemoryAvailable, // APR_ENOSHMAVAIL
+    /// A DSO loading error occurred.
     DSOOpen,                 // APR_EDSOOPEN
+    /// A general failure, not covered elsewhere.
     General,                 // APR_EGENERAL
+    /// An invalid IP address was specified.
     BadIpAddress,            // APR_EBADIP
+    /// An invalid mask was specified.
     BadMask,                 // APR_EBADMASK
+    /// Could not find the requested symbol.
     SymbolNotFound,          // APR_ESYMNOTFOUND
+    /// Not enough entropy to complete the operation.
     NotEnoughEntropy,        // APR_ENOTENOUGHENTROPY
 
+    /// Program is currently executing in the child.
     InChild,         // APR_INCHILD
+    /// Program is currently executing in the parent.
     InParent,        // APR_INPARENT
+    /// The thread is detached.
     Detach,          // APR_DETACH
+    /// The thread is not detached.
     NotDetach,       // APR_NOTDETACH
+    /// The child has finished executing.
     ChildDone,       // APR_CHILD_DONE
+    /// The child has not finished executing.
     ChildNotDone,    // APR_CHILD_NOTDONE
+    /// The operation did not finish before the timeout.
     TimeUp,          // APR_TIMEUP
+    /// The operation was incomplete.
     Incomplete,      // APR_INCOMPLETE
+    /// An invalid character was specified.
     BadCh,           // APR_BADCH
+    /// An invalid argument was passed to a function.
     BadArgument,     // APR_BADARG
+    /// The end of file was reached.
     Eof,             // APR_EOF
+    /// Could not find the requested resource.
     NotFound,        // APR_NOTFOUND
+    /// This is an anonymous operation.
     Anonymous,       // APR_ANONYMOUS
+    /// This is a file based operation.
     FileBased,       // APR_FILEBASED
+    /// This is a key based operation.
     KeyBased,        // APR_KEYBASED
+    /// There was a problem during initialization.
     Initializer,     // APR_EINIT
+    /// The feature has not been implemented.
     NotImplemented,  // APR_ENOTIMPL
+    /// Two parameters were not compatible.
     Mismatch,        // APR_EMISMATCH
+    /// The given path was absolute.
     Absolute,        // APR_EABSOLUTE
+    /// The given path was relative.
     Relative,        // APR_ERELATIVE
+    /// The given path was neither relative nor absolute.
     IncompleteError, // APR_EINCOMPLETE
+    /// The given path was above the root path.
     AboveRoot,       // APR_EABOVEROOT
+    /// The given resource is busy.
     Busy,            // APR_EBUSY
+    /// The process is not recognized by the system.
     ProcessUnknown,  // APR_EPROC_UNKNOWN
 }
 
