@@ -3,7 +3,7 @@ members = [".", "apr-sys"]
 
 [package]
 name = "apr"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@apache.org>"]
 repository = "https://github.com/jelmer/apr-rs.git"
@@ -16,7 +16,7 @@ documentation = "https://docs.rs/apr"
 doctest = false
 
 [dependencies]
-apr-sys = { version = "0.2.0", path = "apr-sys" }
+apr-sys = { version = "0.2.1", path = "apr-sys" }
 ctor = "0.5"
 url = { version = "2", optional = true }
 
