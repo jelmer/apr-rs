@@ -36,7 +36,9 @@ pub struct CryptoKey<'pool> {
 /// Block cipher mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockCipherMode {
+    /// Electronic Codebook mode
     ECB,
+    /// Cipher Block Chaining mode
     CBC,
 }
 
@@ -52,9 +54,13 @@ impl From<BlockCipherMode> for apr_sys::apr_crypto_block_key_mode_e {
 /// Block cipher algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockCipherAlgorithm {
+    /// AES with 128-bit key
     AES128,
+    /// AES with 192-bit key
     AES192,
+    /// AES with 256-bit key
     AES256,
+    /// Triple DES
     DES3,
 }
 

@@ -30,6 +30,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         Self::new_with_capacity(pool, 0)
     }
 
+    /// Create a new array with a given capacity
     pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self {
         let array = unsafe {
             apr_sys::apr_array_make(
@@ -55,6 +56,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         array
     }
 
+    /// Create an array from a raw APR array pointer
     pub fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
         Self {
             ptr,
@@ -181,6 +183,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
         self.ptr
     }
 
+    /// Get a mutable raw pointer to the underlying APR array header
     pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_array_header_t {
         self.ptr
     }
@@ -242,6 +245,7 @@ impl<'pool, T: Sized + Copy> ArrayHeader<'pool, T> {
     }
 }
 
+/// APR table data structure (ordered key-value pairs, allows duplicates)
 #[derive(Debug)]
 pub struct Table<'pool> {
     ptr: *mut apr_table_t,
@@ -254,6 +258,7 @@ impl<'pool> Table<'pool> {
         unsafe { apr_sys::apr_is_empty_table(self.ptr) != 0 }
     }
 
+    /// Copy the table to a new pool
     pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> Table<'newpool> {
         let newtable = unsafe { apr_sys::apr_table_copy(pool.as_mut_ptr(), self.ptr) };
         Table {
@@ -291,6 +296,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Get a value from the table using a memory pool for allocation
     pub fn getm(&self, pool: &mut crate::Pool, key: &str) -> Option<&str> {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
@@ -312,6 +318,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Set a value in the table without copying the strings
     pub fn setn(&mut self, key: &str, value: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
@@ -320,6 +327,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Remove all entries with the given key
     pub fn unset(&mut self, key: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         unsafe {
@@ -327,6 +335,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Merge a value with existing values for the key
     pub fn merge(&mut self, key: &str, value: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
@@ -335,6 +344,7 @@ impl<'pool> Table<'pool> {
         }
     }
 
+    /// Merge a value without copying the strings
     pub fn mergen(&mut self, key: &str, value: &str) {
         let key = std::ffi::CString::new(key).unwrap();
         let value = std::ffi::CString::new(value).unwrap();
@@ -378,6 +388,7 @@ impl<'pool> Table<'pool> {
         self.ptr
     }
 
+    /// Return a mutable pointer to the underlying apr_table_t
     pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_table_t {
         self.ptr
     }

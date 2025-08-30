@@ -45,6 +45,7 @@ impl<'pool, K: IntoHashKey<'pool>, V> Hash<'pool, K, V> {
         }
     }
 
+    /// Copy this hash table to a new pool
     pub fn copy<'newpool, NK: IntoHashKey<'newpool>>(
         &self,
         pool: &'newpool Pool,

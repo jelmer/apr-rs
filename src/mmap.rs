@@ -5,15 +5,19 @@ use std::marker::PhantomData;
 use std::ptr;
 use std::slice;
 
+/// Memory-mapped file
 pub struct Mmap<'a> {
     raw: *mut apr_sys::apr_mmap_t,
     offset: i64,
     _phantom: PhantomData<&'a Pool>,
 }
 
+/// Memory map access flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MmapFlag {
+    /// Read-only access
     Read,
+    /// Write access
     Write,
 }
 
@@ -62,6 +66,7 @@ impl<'a> Mmap<'a> {
         })
     }
 
+    /// Duplicate an existing memory map
     pub fn dup(other: &Self, pool: &'a Pool) -> Result<Self> {
         let mut new_mmap: *mut apr_sys::apr_mmap_t = ptr::null_mut();
 
@@ -78,6 +83,7 @@ impl<'a> Mmap<'a> {
         })
     }
 
+    /// Get the memory map as a byte slice
     pub fn as_bytes(&self) -> &[u8] {
         unsafe {
             let ptr = (*self.raw).mm as *const u8;
@@ -90,6 +96,7 @@ impl<'a> Mmap<'a> {
         }
     }
 
+    /// Get the memory map as a mutable byte slice
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         unsafe {
             let ptr = (*self.raw).mm as *mut u8;
@@ -102,18 +109,22 @@ impl<'a> Mmap<'a> {
         }
     }
 
+    /// Get the offset of the memory map within the file
     pub fn offset(&self) -> i64 {
         self.offset
     }
 
+    /// Get the size of the memory map
     pub fn size(&self) -> usize {
         unsafe { (*self.raw).size }
     }
 
+    /// Get a raw pointer to the underlying APR mmap structure
     pub fn as_ptr(&self) -> *const apr_sys::apr_mmap_t {
         self.raw
     }
 
+    /// Get a mutable raw pointer to the underlying APR mmap structure
     pub fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_mmap_t {
         self.raw
     }
