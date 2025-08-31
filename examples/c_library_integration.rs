@@ -8,7 +8,6 @@
 
 use apr::{Pool, Result, Status};
 use std::ffi::CString;
-use std::os::raw::c_char;
 
 // Example: Simulating bindings for a hypothetical C library that uses APR
 // In a real scenario, these would be actual FFI declarations to your C library

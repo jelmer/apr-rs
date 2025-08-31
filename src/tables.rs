@@ -1,863 +1,686 @@
+//! APR tables and arrays implementation.
+//!
+//! This module provides APR's table (string key-value pairs) and array
+//! (dynamic arrays) data structures.
+
 use crate::pool::Pool;
 pub use apr_sys::{apr_array_header_t, apr_table_t};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::marker::PhantomData;
 
-/// Trait for types that can be constructed from potentially NULL C string pointers.
+/// A dynamic array that stores raw data.
 ///
-/// APR tables store C strings, so this handles the NULL conversion for different target types:
-/// - `&CStr` panics on NULL (references can't be NULL)
-/// - `Option<&CStr>` returns `None` on NULL
-/// - Raw pointers pass through NULL as-is
-pub trait FromNullableCStr<'a>: Sized {
-    /// Convert from a potentially NULL C string pointer.
-    ///
-    /// # Safety
-    /// If ptr is non-NULL, it must point to a valid null-terminated C string
-    /// that lives at least as long as 'a.
-    unsafe fn from_nullable_cstr(ptr: *const std::ffi::c_char) -> Self;
-}
-
-// Implementation for &CStr - panics on NULL
-impl<'a> FromNullableCStr<'a> for &'a std::ffi::CStr {
-    unsafe fn from_nullable_cstr(ptr: *const std::ffi::c_char) -> Self {
-        if ptr.is_null() {
-            panic!("Cannot convert NULL pointer to &CStr. Use Option<&CStr> if NULL values are expected.");
-        }
-        std::ffi::CStr::from_ptr(ptr)
-    }
-}
-
-// Implementation for Option<&CStr> - gracefully handles NULL
-impl<'a> FromNullableCStr<'a> for Option<&'a std::ffi::CStr> {
-    unsafe fn from_nullable_cstr(ptr: *const std::ffi::c_char) -> Self {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(std::ffi::CStr::from_ptr(ptr))
-        }
-    }
-}
-
-// Implementation for raw pointers - passes through NULL
-impl<'a> FromNullableCStr<'a> for *const std::ffi::c_char {
-    unsafe fn from_nullable_cstr(ptr: *const std::ffi::c_char) -> Self {
-        ptr
-    }
-}
-
-// Implementation for CString - owned, panics on NULL
-impl<'a> FromNullableCStr<'a> for std::ffi::CString {
-    unsafe fn from_nullable_cstr(ptr: *const std::ffi::c_char) -> Self {
-        if ptr.is_null() {
-            panic!("Cannot convert NULL pointer to CString. Use Option<CString> if NULL values are expected.");
-        }
-        std::ffi::CStr::from_ptr(ptr).to_owned()
-    }
-}
-
-// Implementation for Option<CString> - gracefully handles NULL
-impl<'a> FromNullableCStr<'a> for Option<std::ffi::CString> {
-    unsafe fn from_nullable_cstr(ptr: *const std::ffi::c_char) -> Self {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(std::ffi::CStr::from_ptr(ptr).to_owned())
-        }
-    }
-}
-
-/// Trait for types that can be stored in APR tables (converted to C string pointers).
-pub trait IntoStoredCStr {
-    /// Convert this value into a C string pointer for storage.
-    fn into_stored_cstr(&self) -> *const std::ffi::c_char;
-}
-
-// For C string types - store the pointer directly
-impl IntoStoredCStr for &std::ffi::CStr {
-    fn into_stored_cstr(&self) -> *const std::ffi::c_char {
-        self.as_ptr()
-    }
-}
-
-impl IntoStoredCStr for std::ffi::CString {
-    fn into_stored_cstr(&self) -> *const std::ffi::c_char {
-        self.as_ptr()
-    }
-}
-
-impl IntoStoredCStr for &str {
-    fn into_stored_cstr(&self) -> *const std::ffi::c_char {
-        // This is unsafe but commonly needed - user must ensure the CString outlives usage
-        // Better to use CStr/CString directly for safety
-        std::ffi::CString::new(*self).unwrap().into_raw() as *const _
-    }
-}
-
-// For Option types - convert None to NULL
-impl IntoStoredCStr for Option<&std::ffi::CStr> {
-    fn into_stored_cstr(&self) -> *const std::ffi::c_char {
-        match self {
-            Some(s) => s.as_ptr(),
-            None => std::ptr::null(),
-        }
-    }
-}
-
-impl IntoStoredCStr for Option<&str> {
-    fn into_stored_cstr(&self) -> *const std::ffi::c_char {
-        match self {
-            Some(s) => std::ffi::CString::new(*s).unwrap().into_raw() as *const _,
-            None => std::ptr::null(),
-        }
-    }
-}
-
-/// Trait for types that can be retrieved from APR arrays.
-pub trait FromAprArrayElement<'array>: Sized {
-    /// Convert from array element pointer to this type.
-    ///
-    /// # Safety
-    /// The caller must ensure:
-    /// - The pointer is valid and points to an element of the correct type
-    /// - The data lives at least as long as 'array lifetime
-    unsafe fn from_apr_array_element(ptr: *const std::ffi::c_void) -> Self;
-}
-
-/// Trait for types that can be stored in APR arrays.
-pub trait IntoAprArrayElement: Sized {
-    /// Convert this value into bytes for storage in an APR array.
-    fn into_apr_array_element(&self) -> Vec<u8>;
-}
-
-// Basic implementations for Copy types
-impl<'array, T: Copy> FromAprArrayElement<'array> for T {
-    unsafe fn from_apr_array_element(ptr: *const std::ffi::c_void) -> Self {
-        *(ptr as *const T)
-    }
-}
-
-impl<T: Copy> IntoAprArrayElement for T {
-    fn into_apr_array_element(&self) -> Vec<u8> {
-        let size = std::mem::size_of::<T>();
-        let mut bytes = Vec::with_capacity(size);
-        unsafe {
-            let ptr = self as *const T as *const u8;
-            bytes.extend_from_slice(std::slice::from_raw_parts(ptr, size));
-        }
-        bytes
-    }
-}
-
-/// A wrapper around an `apr_array_header_t`.
-#[derive(Debug)]
-pub struct ArrayHeader<'pool, T> {
+/// This is a direct wrapper around APR's array_header implementation.
+/// Arrays store fixed-size elements contiguously in memory.
+pub struct Array<'pool> {
     ptr: *mut apr_array_header_t,
-    _phantom: PhantomData<(T, &'pool Pool)>,
+    _phantom: PhantomData<&'pool Pool>,
 }
 
-impl<'pool, T> ArrayHeader<'pool, T> {
-    /// Returns true if the array is empty.
-    pub fn is_empty(&self) -> bool {
-        unsafe { apr_sys::apr_is_empty_array(self.ptr) != 0 }
-    }
-
-    /// Returns the number of elements in the array.
-    pub fn len(&self) -> usize {
-        unsafe { (*self.ptr).nelts as usize }
-    }
-
-    /// Returns the number of elements that can be stored in the array without reallocating.
-    pub fn allocated(&self) -> usize {
-        unsafe { (*self.ptr).nalloc as usize }
-    }
-
-    /// Create an empty ArrayHeader.
-    pub fn new(pool: &'pool Pool) -> Self
-    where
-        T: Sized,
-    {
-        Self::new_with_capacity(pool, 0)
-    }
-
-    /// Create a new array with a given capacity
-    pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self
-    where
-        T: Sized,
-    {
-        let array = unsafe {
-            apr_sys::apr_array_make(
-                pool.as_mut_ptr(),
-                nelts as i32,
-                std::mem::size_of::<T>() as i32,
-            )
-        };
-
-        Self {
-            ptr: array,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Create an array from a raw APR array pointer
-    pub fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
+impl<'pool> Array<'pool> {
+    /// Create a new array.
+    ///
+    /// # Arguments
+    /// * `pool` - Memory pool for allocation
+    /// * `nelts` - Initial number of elements to allocate
+    /// * `elt_size` - Size of each element in bytes
+    pub fn new(pool: &'pool Pool, nelts: i32, elt_size: i32) -> Self {
+        let ptr = unsafe { apr_sys::apr_array_make(pool.as_mut_ptr(), nelts, elt_size) };
         Self {
             ptr,
             _phantom: PhantomData,
         }
     }
 
-    /// Return a pointer to the element at the given index.
-    unsafe fn nth_ptr(&self, index: usize) -> *const std::ffi::c_void {
-        (*self.ptr).elts.add(index * (*self.ptr).elt_size as usize) as *const std::ffi::c_void
+    /// Create an array from a raw pointer.
+    ///
+    /// # Safety
+    /// The pointer must be valid and point to an APR array header.
+    pub unsafe fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
     }
 
-    /// Return the size of each element in the array.
-    pub fn element_size(&self) -> usize {
-        unsafe { (*self.ptr).elt_size as usize }
+    /// Push raw bytes onto the array.
+    ///
+    /// # Safety
+    /// The bytes must be exactly `elt_size` bytes (as specified in `new`).
+    pub unsafe fn push_raw(&mut self, data: &[u8]) {
+        let dst = apr_sys::apr_array_push(self.ptr);
+        std::ptr::copy_nonoverlapping(data.as_ptr(), dst as *mut u8, data.len());
     }
 
-    /// Clear the array
+    /// Get a pointer to an element at the given index.
+    ///
+    /// # Safety
+    /// The index must be valid and the caller must know the element type.
+    pub unsafe fn get_raw(&self, index: usize) -> *mut c_void {
+        let header = &*self.ptr;
+        if index >= header.nelts as usize {
+            panic!("Array index out of bounds");
+        }
+        let elts = header.elts as *mut u8;
+        elts.add(index * header.elt_size as usize) as *mut c_void
+    }
+
+    /// Get the number of elements in the array.
+    pub fn len(&self) -> usize {
+        unsafe { (*self.ptr).nelts as usize }
+    }
+
+    /// Check if the array is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Clear all elements from the array.
     pub fn clear(&mut self) {
         unsafe {
             apr_sys::apr_array_clear(self.ptr);
         }
     }
 
-    /// Create an iterator over just the indices.
-    pub fn indices(&self) -> impl Iterator<Item = usize> + '_ {
-        0..self.len()
-    }
-
-    /// Return a pointer to the underlying `apr_array_header_t`.
-    pub fn as_ptr(&self) -> *const apr_sys::apr_array_header_t {
+    /// Get the raw pointer to the array header.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_ptr(&self) -> *const apr_array_header_t {
         self.ptr
     }
 
-    /// Get a mutable raw pointer to the underlying APR array header
-    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_sys::apr_array_header_t {
+    /// Get a mutable raw pointer to the array header.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_array_header_t {
         self.ptr
     }
 }
 
-// Methods that require FromAprArrayElement for retrieving values
-impl<'pool, T: FromAprArrayElement<'pool>> ArrayHeader<'pool, T> {
-    /// Return the element at the given index.
-    pub fn nth(&self, index: usize) -> Option<T> {
-        if index < self.len() {
-            Some(unsafe { T::from_apr_array_element(self.nth_ptr(index)) })
-        } else {
-            None
-        }
-    }
-
-    /// Get the first element, if any.
-    pub fn first(&self) -> Option<T> {
-        if self.is_empty() {
-            None
-        } else {
-            self.nth(0)
-        }
-    }
-
-    /// Get the last element, if any.
-    pub fn last(&self) -> Option<T> {
-        if self.is_empty() {
-            None
-        } else {
-            self.nth(self.len() - 1)
-        }
-    }
-
-    /// Iterate over the entries in an array
-    pub fn iter(&'pool self) -> ArrayHeaderIterator<'pool, T> {
-        ArrayHeaderIterator::new(self)
-    }
+/// A type-safe wrapper for arrays of a specific type.
+pub struct TypedArray<'pool, T: Copy> {
+    inner: Array<'pool>,
+    _phantom: PhantomData<T>,
 }
 
-// Methods that require IntoAprArrayElement for storing values
-impl<'pool, T: IntoAprArrayElement> ArrayHeader<'pool, T> {
-    /// Push an element onto the end of the array.
-    pub fn push(&mut self, item: T) {
-        unsafe {
-            let ptr = apr_sys::apr_array_push(self.ptr);
-            let bytes = item.into_apr_array_element();
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
-        }
-    }
-
-    /// Push an element and return self for chaining.
-    pub fn with_push(mut self, item: T) -> Self {
-        self.push(item);
-        self
-    }
-
-    /// Extend the array with items from an iterator (like Vec::extend).
-    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        for item in iter {
-            self.push(item);
-        }
-    }
-
-    /// Extend the array with items and return self for chaining.
-    pub fn with_extend<I: IntoIterator<Item = T>>(mut self, iter: I) -> Self {
-        self.extend(iter);
-        self
-    }
-
-    /// Builder pattern: create array, reserve capacity, and populate
-    pub fn with_items<I: IntoIterator<Item = T>>(pool: &'pool Pool, items: I) -> Self
-    where
-        T: Sized,
-    {
-        let items: Vec<T> = items.into_iter().collect();
-        let mut array = Self::new_with_capacity(pool, items.len());
-        for item in items {
-            array.push(item);
-        }
-        array
-    }
-}
-
-// Methods that require both traits
-impl<'pool, T: FromAprArrayElement<'pool> + IntoAprArrayElement> ArrayHeader<'pool, T> {
-    /// Concatenate two arrays.
-    pub fn cat(&mut self, other: &ArrayHeader<'pool, T>) {
-        unsafe {
-            apr_sys::apr_array_cat(self.ptr, other.ptr);
-        }
-    }
-
-    /// Append two arrays.
-    pub fn append<'newpool>(
-        pool: &'newpool Pool,
-        first: &ArrayHeader<'pool, T>,
-        second: &ArrayHeader<'pool, T>,
-    ) -> ArrayHeader<'newpool, T> {
-        ArrayHeader {
-            ptr: unsafe { apr_sys::apr_array_append(pool.as_mut_ptr(), first.ptr, second.ptr) },
+impl<'pool, T: Copy> TypedArray<'pool, T> {
+    /// Create a new typed array.
+    pub fn new(pool: &'pool Pool, initial_size: i32) -> Self {
+        Self {
+            inner: Array::new(pool, initial_size, std::mem::size_of::<T>() as i32),
             _phantom: PhantomData,
         }
     }
 
-    /// Copy the array.
-    pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> ArrayHeader<'newpool, T> {
-        ArrayHeader {
-            ptr: unsafe { apr_sys::apr_array_copy(pool.as_mut_ptr(), self.ptr) },
+    /// Create a typed array from an existing raw APR array pointer.
+    ///
+    /// # Safety
+    /// The caller must ensure:
+    /// - The pointer is valid and points to an APR array
+    /// - The array contains elements of type T with correct size
+    /// - The array outlives 'pool
+    pub unsafe fn from_ptr(ptr: *mut apr_array_header_t) -> Self {
+        Self {
+            inner: Array::from_ptr(ptr),
             _phantom: PhantomData,
         }
     }
+
+    /// Push a value onto the array.
+    pub fn push(&mut self, value: T) {
+        unsafe {
+            let bytes = std::slice::from_raw_parts(
+                &value as *const T as *const u8,
+                std::mem::size_of::<T>(),
+            );
+            self.inner.push_raw(bytes);
+        }
+    }
+
+    /// Get a value at the given index.
+    pub fn get(&self, index: usize) -> Option<T> {
+        if index >= self.len() {
+            return None;
+        }
+        unsafe {
+            let ptr = self.inner.get_raw(index) as *const T;
+            Some(*ptr)
+        }
+    }
+
+    /// Get the number of elements.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Check if the array is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Clear all elements.
+    pub fn clear(&mut self) {
+        self.inner.clear()
+    }
+
+    /// Create an iterator over the array elements.
+    pub fn iter(&self) -> TypedArrayIter<'_, 'pool, T> {
+        TypedArrayIter {
+            array: self,
+            index: 0,
+        }
+    }
+
+    /// Get the raw pointer to the array header.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_ptr(&self) -> *const apr_array_header_t {
+        self.inner.as_ptr()
+    }
+
+    /// Get a mutable raw pointer to the array header.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_array_header_t {
+        self.inner.as_mut_ptr()
+    }
 }
 
-/// An iterator over the elements of an `ArrayHeader`.
-#[derive(Debug)]
-pub struct ArrayHeaderIterator<'pool, T> {
-    array: &'pool ArrayHeader<'pool, T>,
+/// Iterator for TypedArray.
+pub struct TypedArrayIter<'a, 'pool, T: Copy> {
+    array: &'a TypedArray<'pool, T>,
     index: usize,
 }
 
-impl<'pool, T> ArrayHeaderIterator<'pool, T> {
-    fn new(array: &'pool ArrayHeader<'pool, T>) -> Self {
-        Self { array, index: 0 }
-    }
-}
-
-impl<'pool, T: FromAprArrayElement<'pool>> Iterator for ArrayHeaderIterator<'pool, T> {
+impl<'a, 'pool, T: Copy> Iterator for TypedArrayIter<'a, 'pool, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(item) = self.array.nth(self.index) {
+        if self.index < self.array.len() {
+            let value = self.array.get(self.index);
             self.index += 1;
-            Some(item)
+            value
         } else {
             None
         }
     }
 }
 
-// Implement IntoIterator for ArrayHeader
-impl<'pool, T: FromAprArrayElement<'pool>> IntoIterator for &'pool ArrayHeader<'pool, T> {
-    type Item = T;
-    type IntoIter = ArrayHeaderIterator<'pool, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ArrayHeaderIterator::new(self)
-    }
-}
-
-// Implement FromIterator for ArrayHeader
-impl<'pool, T: IntoAprArrayElement + Sized> ArrayHeader<'pool, T> {
-    /// Create an ArrayHeader from an iterator.
-    pub fn from_iter<I: IntoIterator<Item = T>>(pool: &'pool Pool, iter: I) -> Self {
-        let mut array = Self::new(pool);
-        for item in iter {
-            array.push(item);
+impl<'pool, T: Copy> TypedArray<'pool, T> {
+    /// Create a typed array from an iterator of values.
+    pub fn from_iter<I>(pool: &'pool Pool, iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let iter = iter.into_iter();
+        let mut array = Self::new(pool, iter.len() as i32);
+        for value in iter {
+            array.push(value);
         }
         array
     }
 }
 
-/// APR table data structure (ordered key-value pairs, allows duplicates)
-#[derive(Debug)]
-pub struct Table<'pool, V> {
-    ptr: *mut apr_table_t,
-    _phantom: PhantomData<(V, &'pool Pool)>,
+impl<'pool, T: Copy> Extend<T> for TypedArray<'pool, T> {
+    /// Extend the array with values from an iterator.
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for value in iter {
+            self.push(value);
+        }
+    }
 }
 
-impl<'pool, V> Table<'pool, V> {
-    /// Check if the table is empty.
-    pub fn is_empty(&self) -> bool {
-        unsafe { apr_sys::apr_is_empty_table(self.ptr) != 0 }
-    }
+/// A table that maps C strings to C strings.
+///
+/// This is a direct wrapper around APR's table implementation.
+/// Tables are case-insensitive for keys and can have multiple values per key.
+pub struct Table<'pool> {
+    ptr: *mut apr_table_t,
+    _phantom: PhantomData<&'pool Pool>,
+}
 
-    /// Copy the table to a new pool
-    pub fn copy<'newpool>(&self, pool: &'newpool Pool) -> Table<'newpool, V> {
-        let newtable = unsafe { apr_sys::apr_table_copy(pool.as_mut_ptr(), self.ptr) };
-        Table {
-            ptr: newtable,
+impl<'pool> Table<'pool> {
+    /// Create a new table.
+    pub fn new(pool: &'pool Pool, nelts: i32) -> Self {
+        let ptr = unsafe { apr_sys::apr_table_make(pool.as_mut_ptr(), nelts) };
+        Self {
+            ptr,
             _phantom: PhantomData,
         }
     }
 
-    /// Clear the table.
+    /// Create a table from a raw pointer.
+    ///
+    /// # Safety
+    /// The pointer must be valid and point to an APR table.
+    pub unsafe fn from_ptr(ptr: *mut apr_table_t) -> Self {
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Set a key-value pair in the table.
+    ///
+    /// # Safety
+    /// The key and value must be valid C strings.
+    pub unsafe fn set_raw(&mut self, key: *const c_char, val: *const c_char) {
+        apr_sys::apr_table_set(self.ptr, key, val);
+    }
+
+    /// Get a value from the table.
+    ///
+    /// # Safety
+    /// The key must be a valid C string.
+    pub unsafe fn get_raw(&self, key: *const c_char) -> *const c_char {
+        apr_sys::apr_table_get(self.ptr, key)
+    }
+
+    /// Add a key-value pair (allows duplicates).
+    ///
+    /// # Safety
+    /// The key and value must be valid C strings.
+    pub unsafe fn add_raw(&mut self, key: *const c_char, val: *const c_char) {
+        apr_sys::apr_table_add(self.ptr, key, val);
+    }
+
+    /// Remove entries with the given key.
+    ///
+    /// # Safety
+    /// The key must be a valid C string.
+    pub unsafe fn unset_raw(&mut self, key: *const c_char) {
+        apr_sys::apr_table_unset(self.ptr, key);
+    }
+
+    /// Get the number of entries in the table.
+    pub fn len(&self) -> usize {
+        unsafe {
+            let entries = apr_sys::apr_table_elts(self.ptr);
+            (*entries).nelts as usize
+        }
+    }
+
+    /// Check if the table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Clear all entries from the table.
     pub fn clear(&mut self) {
         unsafe {
             apr_sys::apr_table_clear(self.ptr);
         }
     }
 
-    /// Create a new table, with space for nelts entries.
-    pub fn new_with_capacity(pool: &'pool Pool, nelts: usize) -> Self {
-        let ret = unsafe { apr_sys::apr_table_make(pool.as_mut_ptr(), nelts as i32) };
-        Self {
-            ptr: ret,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Check if the table contains a key.
-    pub fn contains_key(&self, key: &str) -> bool {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            let value = apr_sys::apr_table_get(self.ptr, key.as_ptr());
-            !value.is_null()
-        }
-    }
-
-    /// Remove all entries with the given key
-    pub fn unset(&mut self, key: &str) {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            apr_sys::apr_table_unset(self.ptr, key.as_ptr());
-        }
-    }
-
-    /// Create a new empty table (convenience method).
-    pub fn new(pool: &'pool Pool) -> Self {
-        Self::new_with_capacity(pool, 0)
-    }
-
-    /// Return a pointer to the underlying apr_table_t.
-    pub fn as_ptr(&self) -> *const apr_table_t {
+    /// Get the raw pointer to the table.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_ptr(&self) -> *const apr_table_t {
         self.ptr
     }
-}
 
-// Methods that require FromNullableCStr for retrieving values
-impl<'pool, V: FromNullableCStr<'pool>> Table<'pool, V> {
-    /// Return the item with the given key.
-    pub fn get(&self, key: &str) -> Option<V> {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            let value = apr_sys::apr_table_get(self.ptr, key.as_ptr());
-            if value.is_null() {
-                None
-            } else {
-                Some(V::from_nullable_cstr(value))
-            }
-        }
-    }
-
-    /// Get a value from the table using a memory pool for allocation
-    pub fn getm(&self, pool: &mut crate::Pool, key: &str) -> Option<V> {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            let value = apr_sys::apr_table_getm(pool.as_mut_ptr(), self.ptr, key.as_ptr());
-            if value.is_null() {
-                None
-            } else {
-                Some(V::from_nullable_cstr(value))
-            }
-        }
-    }
-}
-
-// Methods that require IntoStoredCStr for storing values
-impl<'pool, V: IntoStoredCStr> Table<'pool, V> {
-    /// Set the value of a key.
-    pub fn set(&mut self, key: &str, value: V) {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            apr_sys::apr_table_set(self.ptr, key.as_ptr(), value.into_stored_cstr());
-        }
-    }
-
-    /// Set a value in the table without copying the strings
-    pub fn setn(&mut self, key: &str, value: V) {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            apr_sys::apr_table_setn(self.ptr, key.as_ptr(), value.into_stored_cstr());
-        }
-    }
-
-    /// Merge a value with existing values for the key
-    pub fn merge(&mut self, key: &str, value: V) {
-        let key = std::ffi::CString::new(key).unwrap();
-        unsafe {
-            apr_sys::apr_table_merge(self.ptr, key.as_ptr(), value.into_stored_cstr());
-        }
-    }
-
-    /// Merge a value without copying the strings
-    pub fn mergen(&mut self, key: &str, value: &str) {
-        let key = std::ffi::CString::new(key).unwrap();
-        let value = std::ffi::CString::new(value).unwrap();
-        unsafe {
-            apr_sys::apr_table_mergen(self.ptr, key.as_ptr(), value.as_ptr());
-        }
-    }
-
-    /// Add a key/value pair to the table.
-    pub fn add(&mut self, key: &str, value: &str) {
-        let key = std::ffi::CString::new(key).unwrap();
-        let value = std::ffi::CString::new(value).unwrap();
-        unsafe {
-            apr_sys::apr_table_add(self.ptr, key.as_ptr(), value.as_ptr());
-        }
-    }
-
-    /// Overlay one table on top of another.
-    pub fn overlay<'newpool>(
-        pool: &'newpool Pool,
-        overlay: &Table<V>,
-        base: &Table<V>,
-    ) -> Table<'newpool, V> {
-        let new_table =
-            unsafe { apr_sys::apr_table_overlay(pool.as_mut_ptr(), overlay.ptr, base.ptr) };
-        Table {
-            ptr: new_table,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Get an iterator over the table's key-value pairs.
+    /// Get a mutable raw pointer to the table.
     ///
-    /// This returns owned String values for safety and to avoid lifetime issues.
-    pub fn iter(&self) -> TableIterator<V> {
-        TableIterator::new(self)
-    }
-
-    /// Return a mutable pointer to the underlying apr_table_t
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
     pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_table_t {
         self.ptr
     }
 }
 
-/// Iterator over key-value pairs in an APR table.
-///
-/// This iterator yields owned (String, String) pairs for safety,
-/// as APR table entries may be modified while iterating.
-#[derive(Debug)]
-pub struct TableIterator<'a, V> {
-    table: &'a Table<'a, V>,
-    entries: Vec<(String, String)>,
-    index: usize,
+/// A type-safe wrapper for tables with string values.
+pub struct StringTable<'pool> {
+    inner: Table<'pool>,
+    pool: &'pool Pool,
 }
 
-impl<'a, V> TableIterator<'a, V> {
-    fn new(table: &'a Table<'a, V>) -> Self {
-        let mut entries = Vec::new();
-
-        // Use apr_table_do to iterate over all entries
-        extern "C" fn callback(
-            rec: *mut std::ffi::c_void,
-            key: *const std::ffi::c_char,
-            value: *const std::ffi::c_char,
-        ) -> std::ffi::c_int {
-            let entries = unsafe { &mut *(rec as *mut Vec<(String, String)>) };
-            let key = unsafe { std::ffi::CStr::from_ptr(key).to_string_lossy().into_owned() };
-            let value = unsafe {
-                std::ffi::CStr::from_ptr(value)
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            entries.push((key, value));
-            1 // Continue iteration
+impl<'pool> StringTable<'pool> {
+    /// Create a new string table.
+    pub fn new(pool: &'pool Pool, initial_size: i32) -> Self {
+        Self {
+            inner: Table::new(pool, initial_size),
+            pool,
         }
+    }
+
+    /// Create a string table from an existing raw APR table pointer.
+    ///
+    /// # Safety
+    /// The caller must ensure:
+    /// - The pointer is valid and points to an APR table
+    /// - The table contains valid C strings
+    /// - The table outlives 'pool
+    pub unsafe fn from_ptr(ptr: *mut apr_table_t, pool: &'pool Pool) -> Self {
+        Self {
+            inner: Table::from_ptr(ptr),
+            pool,
+        }
+    }
+
+    /// Set a key-value pair.
+    pub fn set(&mut self, key: &str, value: &str) {
+        let key_cstr = CString::new(key).expect("Invalid key");
+        let val_cstr = CString::new(value).expect("Invalid value");
+
+        // APR tables copy the strings, so we can use temporary CStrings
+        unsafe {
+            self.inner.set_raw(key_cstr.as_ptr(), val_cstr.as_ptr());
+        }
+    }
+
+    /// Get a value from the table.
+    pub fn get(&self, key: &str) -> Option<&str> {
+        let key_cstr = CString::new(key).ok()?;
 
         unsafe {
-            apr_sys::apr_table_do(
-                Some(callback),
-                &mut entries as *mut Vec<(String, String)> as *mut std::ffi::c_void,
-                table.as_ptr(),
-                std::ptr::null::<std::ffi::c_char>(),
-            );
+            let val_ptr = self.inner.get_raw(key_cstr.as_ptr());
+            if val_ptr.is_null() {
+                None
+            } else {
+                let val_cstr = CStr::from_ptr(val_ptr);
+                val_cstr.to_str().ok()
+            }
         }
+    }
 
-        TableIterator {
-            table,
-            entries,
+    /// Add a key-value pair (allows duplicates).
+    pub fn add(&mut self, key: &str, value: &str) {
+        let key_cstr = CString::new(key).expect("Invalid key");
+        let val_cstr = CString::new(value).expect("Invalid value");
+
+        unsafe {
+            self.inner.add_raw(key_cstr.as_ptr(), val_cstr.as_ptr());
+        }
+    }
+
+    /// Remove all entries with the given key.
+    pub fn unset(&mut self, key: &str) {
+        if let Ok(key_cstr) = CString::new(key) {
+            unsafe {
+                self.inner.unset_raw(key_cstr.as_ptr());
+            }
+        }
+    }
+
+    /// Get the number of entries.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Check if the table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Clear all entries.
+    pub fn clear(&mut self) {
+        self.inner.clear()
+    }
+
+    /// Create an iterator over table entries.
+    pub fn iter(&self) -> StringTableIter<'_, 'pool> {
+        StringTableIter {
+            table: &self.inner,
             index: 0,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<'a, V> Iterator for TableIterator<'a, V> {
-    type Item = (String, String);
+/// Iterator for StringTable that returns references to the strings.
+pub struct StringTableIter<'a, 'pool> {
+    table: &'a Table<'pool>,
+    index: usize,
+    _phantom: PhantomData<&'pool ()>,
+}
+
+impl<'a, 'pool> Iterator for StringTableIter<'a, 'pool> {
+    type Item = (&'a str, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.entries.len() {
-            let item = self.entries[self.index].clone();
+        unsafe {
+            let elts = apr_sys::apr_table_elts(self.table.ptr);
+            let header = &*elts;
+
+            if self.index >= header.nelts as usize {
+                return None;
+            }
+
+            // APR table entries are stored as pairs of char* pointers
+            // Each entry has: key, val, key_checksum (but we only need key and val)
+            let entry_size = std::mem::size_of::<(*const c_char, *const c_char, u32)>();
+            let entry_ptr = (header.elts as *const u8).add(self.index * entry_size);
+
+            let key_ptr = *(entry_ptr as *const *const c_char);
+            let val_ptr =
+                *(entry_ptr.add(std::mem::size_of::<*const c_char>()) as *const *const c_char);
+
             self.index += 1;
-            Some(item)
-        } else {
-            None
+
+            if key_ptr.is_null() {
+                return self.next();
+            }
+
+            let key = CStr::from_ptr(key_ptr).to_str().ok()?;
+            let val = if val_ptr.is_null() {
+                ""
+            } else {
+                CStr::from_ptr(val_ptr).to_str().ok()?
+            };
+
+            Some((key, val))
         }
     }
 }
 
-// Implement IntoIterator for Table
-impl<'pool, V> IntoIterator for &'pool Table<'pool, V> {
-    type Item = (String, String);
-    type IntoIter = TableIterator<'pool, V>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        TableIterator::new(self)
+impl<'pool> StringTable<'pool> {
+    /// Create a string table from an iterator of key-value pairs.
+    pub fn from_iter<'a, I>(pool: &'pool Pool, iter: I) -> Self
+    where
+        I: IntoIterator<Item = (&'a str, &'a str)>,
+    {
+        let mut table = Self::new(pool, 16);
+        for (key, value) in iter {
+            table.set(key, value);
+        }
+        table
     }
 }
 
-// Add FromIterator-like functionality for Table
-// Additional methods that work with the IntoStoredCStr constraint
-impl<'pool, V: IntoStoredCStr> Table<'pool, V> {
-    /// Insert or update a key-value pair (more HashMap-like).
-    pub fn insert(&mut self, key: &str, value: V) {
-        self.set(key, value);
+impl<'pool> Extend<(String, String)> for StringTable<'pool> {
+    /// Extend the table with key-value pairs from an iterator.
+    fn extend<I: IntoIterator<Item = (String, String)>>(&mut self, iter: I) {
+        for (key, value) in iter {
+            self.set(&key, &value);
+        }
     }
+}
 
-    /// Insert a key-value pair and return self for chaining.
-    pub fn with_insert(mut self, key: &str, value: V) -> Self {
-        self.insert(key, value);
-        self
-    }
-
-    /// Remove a key and return true if it existed.
-    pub fn remove(&mut self, key: &str) -> bool {
-        let existed = self.contains_key(key);
-        self.unset(key);
-        existed
-    }
-
-    /// Remove a key and return self for chaining.
-    pub fn with_remove(mut self, key: &str) -> Self {
-        self.remove(key);
-        self
+impl<'pool, 'a> Extend<(&'a str, &'a str)> for StringTable<'pool> {
+    /// Extend the table with key-value pairs from an iterator.
+    fn extend<I: IntoIterator<Item = (&'a str, &'a str)>>(&mut self, iter: I) {
+        for (key, value) in iter {
+            self.set(key, value);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_ints() {
-        let pool = crate::pool::Pool::new();
-        let mut array = super::ArrayHeader::new(&pool);
-        array.push(1);
-        array.push(2);
-        array.push(3);
-        array.push(4);
+    fn test_array_basic() {
+        let pool = Pool::new();
+        let mut array = Array::new(&pool, 10, std::mem::size_of::<i32>() as i32);
 
-        assert_eq!(std::mem::size_of::<i32>(), 4);
-        assert_eq!(array.element_size(), 4);
+        assert!(array.is_empty());
 
-        assert_eq!(array.len(), 4);
+        // Push some values
+        let value1 = 42i32;
+        let value2 = 84i32;
 
-        assert_eq!(array.iter().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+        unsafe {
+            array.push_raw(&value1.to_ne_bytes());
+            array.push_raw(&value2.to_ne_bytes());
+        }
 
-        assert_eq!(array.nth(1), Some(2));
+        assert_eq!(array.len(), 2);
 
-        assert_eq!(array.nth(2), Some(3));
-        assert_eq!(array.nth(10), None);
+        // Get values back
+        unsafe {
+            let ptr1 = array.get_raw(0) as *const i32;
+            let ptr2 = array.get_raw(1) as *const i32;
+            assert_eq!(*ptr1, 42);
+            assert_eq!(*ptr2, 84);
+        }
     }
 
     #[test]
-    fn test_strings() {
-        let pool = crate::pool::Pool::new();
-        let mut array = super::ArrayHeader::new(&pool);
-        array.push("1");
-        array.push("2");
-        array.push("3");
-        array.push("4");
+    fn test_typed_array() {
+        let pool = Pool::new();
+        let mut array = TypedArray::<i32>::new(&pool, 10);
 
-        assert_eq!(array.element_size(), 16);
+        assert!(array.is_empty());
 
-        assert_eq!(array.len(), 4);
+        array.push(42);
+        array.push(84);
+        array.push(126);
 
-        assert_eq!(array.iter().collect::<Vec<_>>(), vec!["1", "2", "3", "4"]);
-
-        assert_eq!(array.nth(1), Some("2"));
-    }
-
-    #[test]
-    fn test_convert() {
-        let pool = crate::pool::Pool::new();
-        let mut array = super::ArrayHeader::new(&pool);
-        array.push("1");
-        array.push("2");
-        array.push("3");
-        array.push("4");
-
-        assert_eq!(array.iter().collect::<Vec<_>>(), vec!["1", "2", "3", "4"]);
-    }
-
-    #[test]
-    fn test_table_iterator() {
-        let pool = crate::pool::Pool::new();
-        let mut table = super::Table::new_with_capacity(&pool, 5);
-
-        let value1 = std::ffi::CString::new("value1").unwrap();
-        let value2 = std::ffi::CString::new("value2").unwrap();
-        let value3 = std::ffi::CString::new("value3").unwrap();
-
-        table.set("key1", value1.as_c_str());
-        table.set("key2", value2.as_c_str());
-        table.set("key3", value3.as_c_str());
-
-        let items: Vec<(String, String)> = table.iter().collect();
-        assert_eq!(items.len(), 3);
-
-        // Check that all key-value pairs are present (order may vary)
-        assert!(items.contains(&("key1".to_string(), "value1".to_string())));
-        assert!(items.contains(&("key2".to_string(), "value2".to_string())));
-        assert!(items.contains(&("key3".to_string(), "value3".to_string())));
-    }
-
-    #[test]
-    fn test_empty_table_iterator() {
-        let pool = crate::pool::Pool::new();
-        let table: super::Table<&std::ffi::CStr> = super::Table::new_with_capacity(&pool, 5);
-
-        let items: Vec<(String, String)> = table.iter().collect();
-        assert_eq!(items.len(), 0);
-    }
-
-    #[test]
-    fn test_into_iterator() {
-        let pool = crate::pool::Pool::new();
-        let v1 = std::ffi::CString::new("1").unwrap();
-        let v2 = std::ffi::CString::new("2").unwrap();
-        let mut table: super::Table<&std::ffi::CStr> = super::Table::new_with_capacity(&pool, 3);
-        table.set("a", v1.as_c_str());
-        table.set("b", v2.as_c_str());
-
-        let mut items: Vec<_> = (&table).into_iter().collect();
-        items.sort_by_key(|(k, _)| k.clone());
-
-        assert_eq!(
-            items,
-            vec![
-                ("a".to_string(), "1".to_string()),
-                ("b".to_string(), "2".to_string())
-            ]
-        );
-    }
-
-    #[test]
-    fn test_array_into_iterator() {
-        let pool = crate::pool::Pool::new();
-        let mut array = super::ArrayHeader::new(&pool);
-        array.push(1);
-        array.push(2);
-        array.push(3);
-
-        let items: Vec<_> = (&array).into_iter().collect();
-        assert_eq!(items, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_array_from_iter() {
-        let pool = crate::pool::Pool::new();
-        let data = vec![1, 2, 3, 4];
-        let array = super::ArrayHeader::from_iter(&pool, data);
-
-        assert_eq!(array.len(), 4);
-        assert_eq!(array.nth(0), Some(1));
-        assert_eq!(array.nth(3), Some(4));
-    }
-
-    // Note: test_table_from_iter removed as Table doesn't have from_iter method
-
-    #[test]
-    fn test_array_extend_and_accessors() {
-        let pool = crate::pool::Pool::new();
-        let mut array = super::ArrayHeader::new(&pool);
-
-        array.extend(vec![1, 2, 3]);
         assert_eq!(array.len(), 3);
-        assert_eq!(array.first(), Some(1));
-        assert_eq!(array.last(), Some(3));
 
-        let array2 = super::ArrayHeader::with_items(&pool, vec![10, 20, 30]);
-        assert_eq!(array2.len(), 3);
-        assert_eq!(array2.nth(1), Some(20));
+        assert_eq!(array.get(0), Some(42));
+        assert_eq!(array.get(1), Some(84));
+        assert_eq!(array.get(2), Some(126));
+        assert_eq!(array.get(3), None);
+
+        // Test iteration
+        let values: Vec<_> = array.iter().collect();
+        assert_eq!(values, vec![42, 84, 126]);
     }
 
     #[test]
-    fn test_table_hashmap_like_api() {
-        let pool = crate::pool::Pool::new();
-        let mut table: super::Table<&std::ffi::CStr> = super::Table::new(&pool);
+    fn test_table_basic() {
+        let pool = Pool::new();
+        let mut table = Table::new(&pool, 10);
 
-        let value1 = std::ffi::CString::new("value1").unwrap();
-        table.insert("key1", value1.as_c_str());
-        assert!(table.contains_key("key1"));
-        assert!(!table.contains_key("nonexistent"));
+        assert!(table.is_empty());
 
-        assert!(table.remove("key1"));
-        assert!(!table.remove("key1")); // Second remove returns false
-        assert!(!table.contains_key("key1"));
+        // Set some values
+        let key1 = CString::new("key1").unwrap();
+        let val1 = CString::new("value1").unwrap();
+        let key2 = CString::new("key2").unwrap();
+        let val2 = CString::new("value2").unwrap();
+
+        unsafe {
+            table.set_raw(key1.as_ptr(), val1.as_ptr());
+            table.set_raw(key2.as_ptr(), val2.as_ptr());
+        }
+
+        assert_eq!(table.len(), 2);
+
+        // Get values back
+        unsafe {
+            let result = table.get_raw(key1.as_ptr());
+            assert!(!result.is_null());
+            assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "value1");
+        }
     }
 
     #[test]
-    fn test_fluent_apis() {
-        let pool = crate::pool::Pool::new();
+    fn test_string_table() {
+        let pool = Pool::new();
+        let mut table = StringTable::new(&pool, 10);
 
-        // Array fluent API
-        let array = super::ArrayHeader::new(&pool)
-            .with_push(1)
-            .with_push(2)
-            .with_extend(vec![3, 4, 5]);
+        assert!(table.is_empty());
+
+        table.set("key1", "value1");
+        table.set("key2", "value2");
+
+        assert_eq!(table.len(), 2);
+
+        assert_eq!(table.get("key1"), Some("value1"));
+        assert_eq!(table.get("key2"), Some("value2"));
+        assert_eq!(table.get("key3"), None);
+
+        // Test add (duplicates)
+        table.add("key1", "another_value1");
+        assert!(table.len() > 2); // Should have more entries now
+
+        // Test unset
+        table.unset("key1");
+        assert_eq!(table.get("key1"), None);
+    }
+
+    #[test]
+    fn test_typed_array_from_iter() {
+        let pool = Pool::new();
+
+        let data = vec![1, 2, 3, 4, 5];
+        let array = TypedArray::<i32>::from_iter(&pool, data.clone());
+
         assert_eq!(array.len(), 5);
-        assert_eq!(array.last(), Some(5));
-
-        // Table fluent API
-        let value1 = std::ffi::CString::new("value1").unwrap();
-        let value2 = std::ffi::CString::new("value2").unwrap();
-        let table: super::Table<&std::ffi::CStr> = super::Table::new(&pool)
-            .with_insert("key1", value1.as_c_str())
-            .with_insert("key2", value2.as_c_str())
-            .with_remove("key2");
-        assert!(table.contains_key("key1"));
-        assert!(!table.contains_key("key2"));
+        for (i, &val) in data.iter().enumerate() {
+            assert_eq!(array.get(i), Some(val));
+        }
     }
 
     #[test]
-    fn test_advanced_iterators() {
-        let pool = crate::pool::Pool::new();
-        let array = super::ArrayHeader::with_items(&pool, vec![10, 20, 30]);
+    fn test_typed_array_extend() {
+        let pool = Pool::new();
+        let mut array = TypedArray::<i32>::new(&pool, 10);
 
-        // Test enumerated iterator
-        let enumerated: Vec<_> = array.iter().enumerate().collect();
-        assert_eq!(enumerated, vec![(0, 10), (1, 20), (2, 30)]);
+        array.push(1);
+        array.push(2);
+        assert_eq!(array.len(), 2);
 
-        // Test indices iterator
-        let indices: Vec<_> = array.indices().collect();
-        assert_eq!(indices, vec![0, 1, 2]);
+        array.extend(vec![3, 4, 5]);
+        assert_eq!(array.len(), 5);
+
+        assert_eq!(array.get(0), Some(1));
+        assert_eq!(array.get(4), Some(5));
+    }
+
+    #[test]
+    fn test_string_table_from_iter() {
+        let pool = Pool::new();
+
+        let data = vec![("key1", "value1"), ("key2", "value2"), ("key3", "value3")];
+
+        let table = StringTable::from_iter(&pool, data);
+
+        assert_eq!(table.len(), 3);
+        assert_eq!(table.get("key1"), Some("value1"));
+        assert_eq!(table.get("key2"), Some("value2"));
+        assert_eq!(table.get("key3"), Some("value3"));
+    }
+
+    #[test]
+    fn test_string_table_extend() {
+        let pool = Pool::new();
+        let mut table = StringTable::new(&pool, 10);
+
+        table.set("a", "1");
+        assert_eq!(table.len(), 1);
+
+        table.extend(vec![("b", "2"), ("c", "3")]);
+        assert_eq!(table.len(), 3);
+
+        assert_eq!(table.get("a"), Some("1"));
+        assert_eq!(table.get("b"), Some("2"));
+        assert_eq!(table.get("c"), Some("3"));
+
+        // Test extend with String pairs
+        table.extend(vec![
+            ("d".to_string(), "4".to_string()),
+            ("e".to_string(), "5".to_string()),
+        ]);
+        assert_eq!(table.len(), 5);
     }
 }

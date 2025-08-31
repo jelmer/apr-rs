@@ -5,138 +5,28 @@
 //! blocks on pop when empty.
 
 use crate::{pool::Pool, Error, Result, Status};
+use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::ptr;
 
-/// Trait for types that can be retrieved from APR queues.
-pub trait FromAprQueueElement<'queue>: Sized {
-    /// Convert from queue element pointer to this type.
-    ///
-    /// # Safety
-    /// The caller must ensure:
-    /// - The pointer is valid or NULL
-    /// - If non-NULL, the data lives at least as long as 'queue lifetime
-    unsafe fn from_apr_queue_element(ptr: *mut std::ffi::c_void) -> Self;
-}
-
-/// Trait for types that can be stored in APR queues.
-/// The lifetime 'a represents the minimum lifetime of the data being queued.
-pub trait IntoAprQueueElement<'a> {
-    /// Convert this value into a pointer for storage in an APR queue.
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void;
-}
-
-// Implementation for references - panics on NULL
-impl<'queue, T> FromAprQueueElement<'queue> for &'queue T {
-    unsafe fn from_apr_queue_element(ptr: *mut std::ffi::c_void) -> Self {
-        if ptr.is_null() {
-            panic!("Cannot convert NULL pointer to reference. Use Option<&T> if NULL values are expected.");
-        }
-        &*(ptr as *const T)
-    }
-}
-
-// Implementation for Option<&T> - gracefully handles NULL
-impl<'queue, T> FromAprQueueElement<'queue> for Option<&'queue T> {
-    unsafe fn from_apr_queue_element(ptr: *mut std::ffi::c_void) -> Self {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(&*(ptr as *const T))
-        }
-    }
-}
-
-// Implementation for raw pointers - passes through NULL
-impl<'queue, T> FromAprQueueElement<'queue> for *mut T {
-    unsafe fn from_apr_queue_element(ptr: *mut std::ffi::c_void) -> Self {
-        ptr as *mut T
-    }
-}
-
-impl<'queue, T> FromAprQueueElement<'queue> for *const T {
-    unsafe fn from_apr_queue_element(ptr: *mut std::ffi::c_void) -> Self {
-        ptr as *const T
-    }
-}
-
-impl<'a, T> IntoAprQueueElement<'a> for *mut T {
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void {
-        *self as *mut std::ffi::c_void
-    }
-}
-
-impl<'a, T> IntoAprQueueElement<'a> for *const T {
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void {
-        *self as *mut T as *mut std::ffi::c_void
-    }
-}
-
-// Implementation for references - ensures data outlives the queue
-impl<'a, T> IntoAprQueueElement<'a> for &'a T {
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void {
-        *self as *const T as *mut T as *mut std::ffi::c_void
-    }
-}
-
-impl<'a, T> IntoAprQueueElement<'a> for &'a mut T {
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void {
-        *self as *const T as *mut T as *mut std::ffi::c_void
-    }
-}
-
-// Implementation for Option<&T> - converts None to NULL
-impl<'a, T> IntoAprQueueElement<'a> for Option<&'a T> {
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void {
-        match self {
-            Some(ptr) => *ptr as *const T as *mut T as *mut std::ffi::c_void,
-            None => std::ptr::null_mut(),
-        }
-    }
-}
-
-impl<'a, T> IntoAprQueueElement<'a> for Option<&'a mut T> {
-    fn into_apr_queue_element(&self) -> *mut std::ffi::c_void {
-        match self {
-            Some(ptr) => *ptr as *const T as *mut T as *mut std::ffi::c_void,
-            None => std::ptr::null_mut(),
-        }
-    }
-}
-
-/// A thread-safe FIFO queue.
+/// A thread-safe FIFO queue that stores raw pointers.
 ///
+/// This is a direct wrapper around APR's queue implementation.
 /// The queue is bounded and will block on push operations when full,
-/// and block on pop operations when empty. It's designed for passing
-/// pointers between threads safely.
-pub struct Queue<'pool, T> {
+/// and block on pop operations when empty.
+///
+/// Values are stored as raw pointers - the queue does not manage their lifetime.
+pub struct Queue<'pool> {
     ptr: *mut apr_sys::apr_queue_t,
-    _phantom: PhantomData<(T, &'pool Pool)>,
+    _phantom: PhantomData<&'pool Pool>,
 }
 
-impl<'pool, T> Queue<'pool, T> {
-    /// Create a new queue from a raw pointer.
-    pub fn from_ptr(ptr: *mut apr_sys::apr_queue_t) -> Self {
-        Self {
-            ptr,
-            _phantom: PhantomData,
-        }
-    }
-
+impl<'pool> Queue<'pool> {
     /// Create a new queue with the specified capacity.
     ///
     /// # Arguments
     /// * `capacity` - Maximum number of elements the queue can hold
     /// * `pool` - Memory pool for allocation
-    ///
-    /// # Example
-    /// ```
-    /// use apr::Pool;
-    /// use apr::queue::Queue;
-    ///
-    /// let pool = Pool::new();
-    /// let queue: Queue<i32> = Queue::new(100, &pool).unwrap();
-    /// ```
     pub fn new(capacity: u32, pool: &'pool Pool) -> Result<Self> {
         let mut queue_ptr: *mut apr_sys::apr_queue_t = ptr::null_mut();
 
@@ -153,9 +43,89 @@ impl<'pool, T> Queue<'pool, T> {
         })
     }
 
+    /// Create a queue from a raw pointer.
+    ///
+    /// # Safety
+    /// The pointer must be valid and point to an APR queue.
+    pub unsafe fn from_ptr(ptr: *mut apr_sys::apr_queue_t) -> Self {
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Push a raw pointer onto the queue.
+    ///
+    /// This will block if the queue is full until space becomes available
+    /// or the queue is interrupted.
+    ///
+    /// # Safety
+    /// The caller must ensure the pointer remains valid until it is popped from the queue.
+    pub unsafe fn push(&mut self, data: *mut c_void) -> Result<()> {
+        let status = apr_sys::apr_queue_push(self.ptr, data);
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        Ok(())
+    }
+
+    /// Try to push a raw pointer onto the queue without blocking.
+    ///
+    /// Returns an error if the queue is full.
+    ///
+    /// # Safety
+    /// The caller must ensure the pointer remains valid until it is popped from the queue.
+    pub unsafe fn try_push(&mut self, data: *mut c_void) -> Result<()> {
+        let status = apr_sys::apr_queue_trypush(self.ptr, data);
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        Ok(())
+    }
+
+    /// Pop a raw pointer from the queue.
+    ///
+    /// This will block if the queue is empty until an element becomes available
+    /// or the queue is interrupted.
+    pub fn pop(&mut self) -> Result<*mut c_void> {
+        let mut data: *mut c_void = ptr::null_mut();
+
+        let status = unsafe { apr_sys::apr_queue_pop(self.ptr, &mut data) };
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        Ok(data)
+    }
+
+    /// Try to pop a raw pointer from the queue without blocking.
+    ///
+    /// Returns an error if the queue is empty.
+    pub fn try_pop(&mut self) -> Result<*mut c_void> {
+        let mut data: *mut c_void = ptr::null_mut();
+
+        let status = unsafe { apr_sys::apr_queue_trypop(self.ptr, &mut data) };
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        Ok(data)
+    }
+
     /// Get the current number of elements in the queue.
     pub fn size(&self) -> u32 {
         unsafe { apr_sys::apr_queue_size(self.ptr) }
+    }
+
+    /// Check if the queue is empty.
+    pub fn is_empty(&self) -> bool {
+        self.size() == 0
     }
 
     /// Interrupt all threads blocked on this queue.
@@ -185,11 +155,6 @@ impl<'pool, T> Queue<'pool, T> {
         Ok(())
     }
 
-    /// Check if the queue is empty.
-    pub fn is_empty(&self) -> bool {
-        self.size() == 0
-    }
-
     /// Get a raw pointer to the underlying apr_queue_t.
     ///
     /// # Safety
@@ -207,79 +172,11 @@ impl<'pool, T> Queue<'pool, T> {
     }
 }
 
-// Methods that require IntoAprQueueElement for pushing values
-impl<'pool, 'data, T> Queue<'pool, T>
-where
-    T: IntoAprQueueElement<'data>,
-    'data: 'pool, // Data must outlive the queue
-{
-    /// Push an element onto the queue.
-    ///
-    /// This will block if the queue is full until space becomes available
-    /// or the queue is interrupted.
-    pub fn push(&mut self, data: T) -> Result<()> {
-        let status = unsafe { apr_sys::apr_queue_push(self.ptr, data.into_apr_queue_element()) };
-
-        if status != apr_sys::APR_SUCCESS as i32 {
-            return Err(Error::from_status(Status::from(status)));
-        }
-
-        Ok(())
-    }
-
-    /// Try to push an element onto the queue without blocking.
-    ///
-    /// Returns an error if the queue is full.
-    pub fn try_push(&mut self, data: T) -> Result<()> {
-        let status = unsafe { apr_sys::apr_queue_trypush(self.ptr, data.into_apr_queue_element()) };
-
-        if status != apr_sys::APR_SUCCESS as i32 {
-            return Err(Error::from_status(Status::from(status)));
-        }
-
-        Ok(())
-    }
-}
-
-// Methods that require FromAprQueueElement for popping values
-impl<'pool, T: FromAprQueueElement<'pool>> Queue<'pool, T> {
-    /// Pop an element from the queue.
-    ///
-    /// This will block if the queue is empty until an element becomes available
-    /// or the queue is interrupted.
-    pub fn pop(&mut self) -> Result<T> {
-        let mut data: *mut std::ffi::c_void = ptr::null_mut();
-
-        let status = unsafe { apr_sys::apr_queue_pop(self.ptr, &mut data) };
-
-        if status != apr_sys::APR_SUCCESS as i32 {
-            return Err(Error::from_status(Status::from(status)));
-        }
-
-        Ok(unsafe { T::from_apr_queue_element(data) })
-    }
-
-    /// Try to pop an element from the queue without blocking.
-    ///
-    /// Returns an error if the queue is empty.
-    pub fn try_pop(&mut self) -> Result<T> {
-        let mut data: *mut std::ffi::c_void = ptr::null_mut();
-
-        let status = unsafe { apr_sys::apr_queue_trypop(self.ptr, &mut data) };
-
-        if status != apr_sys::APR_SUCCESS as i32 {
-            return Err(Error::from_status(Status::from(status)));
-        }
-
-        Ok(unsafe { T::from_apr_queue_element(data) })
-    }
-}
-
 // Since Queue holds raw pointers, we need to be explicit about thread safety
-unsafe impl<'pool, T: Send> Send for Queue<'pool, T> {}
-unsafe impl<'pool, T: Send> Sync for Queue<'pool, T> {}
+unsafe impl<'pool> Send for Queue<'pool> {}
+unsafe impl<'pool> Sync for Queue<'pool> {}
 
-impl<'pool, T> std::fmt::Debug for Queue<'pool, T> {
+impl<'pool> std::fmt::Debug for Queue<'pool> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Queue")
             .field("size", &self.size())
@@ -288,19 +185,101 @@ impl<'pool, T> std::fmt::Debug for Queue<'pool, T> {
     }
 }
 
-/// A safer wrapper for passing boxed values through the queue.
+/// A type-safe queue for passing references between threads.
 ///
-/// This wrapper helps manage the lifetime of heap-allocated values
-/// passed through the queue.
+/// This wrapper ensures that references passed through the queue
+/// have the appropriate lifetime constraints.
+pub struct TypedQueue<'pool, T> {
+    inner: Queue<'pool>,
+    _phantom: PhantomData<T>,
+}
+
+impl<'pool, T> TypedQueue<'pool, T> {
+    /// Create a new typed queue.
+    pub fn new(capacity: u32, pool: &'pool Pool) -> Result<Self> {
+        Ok(TypedQueue {
+            inner: Queue::new(capacity, pool)?,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Create a typed queue from an existing raw APR queue pointer.
+    ///
+    /// # Safety
+    /// The caller must ensure:
+    /// - The pointer is valid and points to an APR queue
+    /// - The queue contains pointers to values of type T
+    /// - The queue outlives 'pool
+    pub unsafe fn from_ptr(ptr: *mut apr_sys::apr_queue_t) -> Self {
+        Self {
+            inner: Queue::from_ptr(ptr),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Push a reference onto the queue.
+    ///
+    /// The reference must outlive the pool.
+    pub fn push_ref(&mut self, data: &'pool T) -> Result<()> {
+        unsafe { self.inner.push(data as *const T as *mut c_void) }
+    }
+
+    /// Try to push a reference without blocking.
+    pub fn try_push_ref(&mut self, data: &'pool T) -> Result<()> {
+        unsafe { self.inner.try_push(data as *const T as *mut c_void) }
+    }
+
+    /// Pop a reference from the queue.
+    pub fn pop_ref(&mut self) -> Result<&'pool T> {
+        let ptr = self.inner.pop()?;
+        Ok(unsafe { &*(ptr as *const T) })
+    }
+
+    /// Try to pop a reference without blocking.
+    pub fn try_pop_ref(&mut self) -> Result<&'pool T> {
+        let ptr = self.inner.try_pop()?;
+        Ok(unsafe { &*(ptr as *const T) })
+    }
+
+    /// Get the current number of elements.
+    pub fn size(&self) -> u32 {
+        self.inner.size()
+    }
+
+    /// Check if the queue is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Interrupt all waiting threads.
+    pub fn interrupt_all(&mut self) -> Result<()> {
+        self.inner.interrupt_all()
+    }
+
+    /// Terminate the queue.
+    pub fn terminate(&mut self) -> Result<()> {
+        self.inner.terminate()
+    }
+}
+
+unsafe impl<'pool, T: Send> Send for TypedQueue<'pool, T> {}
+unsafe impl<'pool, T: Send> Sync for TypedQueue<'pool, T> {}
+
+/// A queue for passing owned values between threads.
+///
+/// This wrapper manages the lifetime of heap-allocated values
+/// passed through the queue, ensuring they are properly cleaned up.
 pub struct BoxedQueue<'pool, T: Send> {
-    queue: Queue<'pool, *mut T>,
+    inner: Queue<'pool>,
+    _phantom: PhantomData<T>,
 }
 
 impl<'pool, T: Send> BoxedQueue<'pool, T> {
     /// Create a new boxed queue.
     pub fn new(capacity: u32, pool: &'pool Pool) -> Result<Self> {
         Ok(BoxedQueue {
-            queue: Queue::new(capacity, pool)?,
+            inner: Queue::new(capacity, pool)?,
+            _phantom: PhantomData,
         })
     }
 
@@ -310,14 +289,14 @@ impl<'pool, T: Send> BoxedQueue<'pool, T> {
     pub fn push(&mut self, value: T) -> Result<()> {
         let boxed = Box::new(value);
         let ptr = Box::into_raw(boxed);
-        self.queue.push(ptr)
+        unsafe { self.inner.push(ptr as *mut c_void) }
     }
 
     /// Try to push a value without blocking.
     pub fn try_push(&mut self, value: T) -> Result<()> {
         let boxed = Box::new(value);
         let ptr = Box::into_raw(boxed);
-        match self.queue.try_push(ptr) {
+        match unsafe { self.inner.try_push(ptr as *mut c_void) } {
             Ok(()) => Ok(()),
             Err(e) => {
                 // Reclaim the box if push failed
@@ -333,34 +312,34 @@ impl<'pool, T: Send> BoxedQueue<'pool, T> {
     ///
     /// Ownership of the value is transferred to the caller.
     pub fn pop(&mut self) -> Result<T> {
-        let ptr: *mut T = self.queue.pop()?;
-        Ok(*unsafe { Box::from_raw(ptr) })
+        let ptr = self.inner.pop()?;
+        Ok(*unsafe { Box::from_raw(ptr as *mut T) })
     }
 
     /// Try to pop a value without blocking.
     pub fn try_pop(&mut self) -> Result<T> {
-        let ptr: *mut T = self.queue.try_pop()?;
-        Ok(*unsafe { Box::from_raw(ptr) })
+        let ptr = self.inner.try_pop()?;
+        Ok(*unsafe { Box::from_raw(ptr as *mut T) })
     }
 
-    /// Get the current number of elements in the queue.
+    /// Get the current number of elements.
     pub fn size(&self) -> u32 {
-        self.queue.size()
+        self.inner.size()
     }
 
     /// Check if the queue is empty.
     pub fn is_empty(&self) -> bool {
-        self.queue.is_empty()
+        self.inner.is_empty()
     }
 
     /// Interrupt all waiting threads.
     pub fn interrupt_all(&mut self) -> Result<()> {
-        self.queue.interrupt_all()
+        self.inner.interrupt_all()
     }
 
     /// Terminate the queue.
     pub fn terminate(&mut self) -> Result<()> {
-        self.queue.terminate()
+        self.inner.terminate()
     }
 }
 
@@ -380,19 +359,19 @@ mod tests {
     #[test]
     fn test_queue_basic() {
         let pool = Pool::new();
-        let mut queue: Queue<*mut i32> = Queue::new(10, &pool).unwrap();
+        let mut queue = Queue::new(10, &pool).unwrap();
 
         assert!(queue.is_empty());
         assert_eq!(queue.size(), 0);
 
         // Push some values
-        let val1 = Box::new(42);
-        let val2 = Box::new(84);
-        let ptr1 = Box::into_raw(val1);
-        let ptr2 = Box::into_raw(val2);
+        let val1 = 42i32;
+        let val2 = 84i32;
 
-        queue.push(ptr1).unwrap();
-        queue.push(ptr2).unwrap();
+        unsafe {
+            queue.push(&val1 as *const i32 as *mut c_void).unwrap();
+            queue.push(&val2 as *const i32 as *mut c_void).unwrap();
+        }
 
         assert_eq!(queue.size(), 2);
         assert!(!queue.is_empty());
@@ -401,42 +380,32 @@ mod tests {
         let out1 = queue.pop().unwrap();
         let out2 = queue.pop().unwrap();
 
-        assert_eq!(unsafe { *Box::from_raw(out1) }, 42);
-        assert_eq!(unsafe { *Box::from_raw(out2) }, 84);
+        unsafe {
+            assert_eq!(*(out1 as *const i32), 42);
+            assert_eq!(*(out2 as *const i32), 84);
+        }
 
         assert!(queue.is_empty());
     }
 
     #[test]
-    fn test_queue_try_operations() {
+    fn test_typed_queue() {
         let pool = Pool::new();
-        let mut queue: Queue<*mut i32> = Queue::new(2, &pool).unwrap();
+        let mut queue = TypedQueue::<i32>::new(10, &pool).unwrap();
 
-        // Try pop on empty queue should fail
-        assert!(queue.try_pop().is_err());
+        let val1 = 42;
+        let val2 = 84;
 
-        // Fill the queue
-        let val1 = Box::into_raw(Box::new(1));
-        let val2 = Box::into_raw(Box::new(2));
-        queue.try_push(val1).unwrap();
-        queue.try_push(val2).unwrap();
+        queue.push_ref(&val1).unwrap();
+        queue.push_ref(&val2).unwrap();
 
-        // Try push on full queue should fail
-        let val3 = Box::into_raw(Box::new(3));
-        assert!(queue.try_push(val3).is_err());
-        unsafe {
-            drop(Box::from_raw(val3));
-        } // Clean up
+        assert_eq!(queue.size(), 2);
 
-        // Try pop should succeed
-        let out = queue.try_pop().unwrap();
-        assert_eq!(unsafe { *Box::from_raw(out) }, 1);
+        let out1 = queue.pop_ref().unwrap();
+        let out2 = queue.pop_ref().unwrap();
 
-        // Clean up remaining value
-        let out = queue.try_pop().unwrap();
-        unsafe {
-            drop(Box::from_raw(out));
-        }
+        assert_eq!(*out1, 42);
+        assert_eq!(*out2, 84);
     }
 
     #[test]
@@ -463,9 +432,9 @@ mod tests {
     }
 
     #[test]
-    fn test_boxed_queue_try_operations() {
+    fn test_queue_try_operations() {
         let pool = Pool::new();
-        let mut queue = BoxedQueue::new(1, &pool).unwrap();
+        let mut queue = BoxedQueue::<i32>::new(1, &pool).unwrap();
 
         // Try pop on empty should fail
         assert!(queue.try_pop().is_err());

@@ -2,381 +2,379 @@
 
 use crate::pool::Pool;
 pub use apr_sys::apr_hash_t;
+use std::ffi::c_void;
 use std::marker::PhantomData;
 
-/// Trait for types that can be constructed from potentially NULL pointers.
+/// A hash table that stores byte slices as keys and raw pointers as values.
 ///
-/// This allows us to handle NULL values differently depending on the target type:
-/// - `&T` panics on NULL (since references can't be NULL)
-/// - `Option<&T>` returns `None` on NULL
-/// - Raw pointers pass through NULL as-is
-pub trait FromNullablePtr<'a>: Sized {
-    /// Convert from a potentially NULL pointer.
-    ///
-    /// # Safety
-    /// If ptr is non-NULL, it must point to valid data of type T that lives at least as long as 'a.
-    unsafe fn from_nullable_ptr<T>(ptr: *mut T) -> Self;
-}
-
-// Implementation for references - panics on NULL
-// This handles the case where V = T and we return &T
-impl<'a, T> FromNullablePtr<'a> for &'a T {
-    unsafe fn from_nullable_ptr<U>(ptr: *mut U) -> Self {
-        if ptr.is_null() {
-            panic!("Cannot convert NULL pointer to reference. Use Option<&T> if NULL values are expected.");
-        }
-        &*(ptr as *const T)
-    }
-}
-
-// Implementation for Option<&T> - gracefully handles NULL
-// This handles the case where V = T and we return Option<&T>
-impl<'a, T> FromNullablePtr<'a> for Option<&'a T> {
-    unsafe fn from_nullable_ptr<U>(ptr: *mut U) -> Self {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(&*(ptr as *const T))
-        }
-    }
-}
-
-// Implementation for raw pointers - passes through NULL
-impl<'a, T> FromNullablePtr<'a> for *const T {
-    unsafe fn from_nullable_ptr<U>(ptr: *mut U) -> Self {
-        ptr as *const T
-    }
-}
-
-impl<'a, T> FromNullablePtr<'a> for *mut T {
-    unsafe fn from_nullable_ptr<U>(ptr: *mut U) -> Self {
-        ptr as *mut T
-    }
-}
-
-/// Trait for types that can be stored in the hash (converted to void pointers).
-pub trait IntoStoredPointer {
-    /// Convert this value into a void pointer for storage.
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void;
-}
-
-// For references - store pointer to the referenced data
-impl<T> IntoStoredPointer for &T {
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void {
-        self as *const T as *mut std::ffi::c_void
-    }
-}
-
-// For raw pointers - store the pointer value directly
-impl<T> IntoStoredPointer for *const T {
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void {
-        self as *mut std::ffi::c_void
-    }
-}
-
-impl<T> IntoStoredPointer for *mut T {
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void {
-        self as *mut std::ffi::c_void
-    }
-}
-
-// For Option<&T> - convert None to NULL
-impl<T> IntoStoredPointer for Option<&T> {
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void {
-        match self {
-            Some(ptr) => ptr as *const T as *mut std::ffi::c_void,
-            None => std::ptr::null_mut(),
-        }
-    }
-}
-
-// For Option<*const T> and Option<*mut T>
-impl<T> IntoStoredPointer for Option<*const T> {
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void {
-        match self {
-            Some(ptr) => ptr as *mut std::ffi::c_void,
-            None => std::ptr::null_mut(),
-        }
-    }
-}
-
-impl<T> IntoStoredPointer for Option<*mut T> {
-    fn into_stored_pointer(self) -> *mut std::ffi::c_void {
-        self.unwrap_or(std::ptr::null_mut()) as *mut std::ffi::c_void
-    }
-}
-
-/// A hash map.
-///
-/// APR hash maps store pointers to values. This wrapper provides a safe interface
-/// where values must outlive the hash map through lifetime constraints.
-///
-/// The value type `V` must be a reference type and determines how NULL pointers are handled:
-/// - `&T`: Panics on NULL (references can't be NULL in Rust)
-/// - `Option<&T>`: Returns `None` for NULL, `Some(&T)` for valid pointers
-/// - `*const T`, `*mut T`: Raw pointers, passes NULL through unchanged
-#[derive(Debug)]
-pub struct Hash<'data, K, V> {
+/// This is a direct wrapper around APR's hash table implementation.
+/// Keys are arbitrary byte sequences with an associated length.
+/// Values are raw pointers that the hash table does not manage.
+pub struct Hash<'pool> {
     ptr: *mut apr_hash_t,
-    _phantom: PhantomData<(&'data K, V, &'data Pool)>,
+    _phantom: PhantomData<&'pool ()>,
 }
 
-/// Trait for types that can be used as keys in a hash map.
-pub trait IntoHashKey {
-    /// Convert the value into a byte slice that can be used as a key.
-    fn into_hash_key(&self) -> &[u8];
-}
-
-impl IntoHashKey for &[u8] {
-    fn into_hash_key(&self) -> &[u8] {
-        self
-    }
-}
-
-impl IntoHashKey for &str {
-    fn into_hash_key(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl IntoHashKey for String {
-    fn into_hash_key(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl<'data, K: IntoHashKey, V: 'data> Hash<'data, K, V> {
-    /// Create a new hash map in the given pool.
-    pub fn new(pool: &Pool) -> Self {
+impl<'pool> Hash<'pool> {
+    /// Create a new hash table in the given pool.
+    pub fn new(pool: &'pool Pool) -> Self {
         Self {
             ptr: unsafe { apr_sys::apr_hash_make(pool.as_mut_ptr()) },
             _phantom: PhantomData,
         }
     }
 
-    /// Create a new hash map from a raw pointer.
-    pub fn from_ptr(ptr: *mut apr_hash_t) -> Self {
+    /// Create a hash table from a raw pointer.
+    ///
+    /// # Safety
+    /// The pointer must be valid and point to an APR hash table.
+    pub unsafe fn from_ptr(ptr: *mut apr_hash_t) -> Self {
         Self {
             ptr,
             _phantom: PhantomData,
         }
     }
 
-    /// Insert a key-value pair into the hash map.
+    /// Insert a key-value pair into the hash table.
     ///
-    /// For reference types (&T), stores a pointer to the referenced data.
-    /// For raw pointer types, stores the pointer value directly.
-    /// For Option types, converts None to NULL pointer.
-    pub fn insert(&mut self, key: K, value: V)
-    where
-        V: IntoStoredPointer,
-    {
-        let key_bytes = key.into_hash_key();
+    /// The key is copied by APR, but the value is stored as-is.
+    ///
+    /// # Safety
+    /// The caller must ensure the value pointer remains valid for the lifetime of the hash table,
+    /// or until the key is removed/replaced.
+    pub unsafe fn insert(&mut self, key: &[u8], value: *mut c_void) {
+        apr_sys::apr_hash_set(
+            self.ptr,
+            key.as_ptr() as *const c_void,
+            key.len() as apr_sys::apr_ssize_t,
+            value,
+        );
+    }
+
+    /// Get the value associated with a key.
+    pub fn get(&self, key: &[u8]) -> Option<*mut c_void> {
         unsafe {
-            apr_sys::apr_hash_set(
+            let ptr = apr_sys::apr_hash_get(
                 self.ptr,
-                key_bytes.as_ptr() as *const std::ffi::c_void,
-                key_bytes.len() as apr_sys::apr_ssize_t,
-                value.into_stored_pointer(),
+                key.as_ptr() as *const c_void,
+                key.len() as apr_sys::apr_ssize_t,
             );
+            if ptr.is_null() {
+                None
+            } else {
+                Some(ptr)
+            }
         }
     }
 
-    /// Remove a key from the hash map.
-    pub fn remove(&mut self, key: K) {
-        let key_bytes = key.into_hash_key();
+    /// Remove a key from the hash table.
+    pub fn remove(&mut self, key: &[u8]) {
         unsafe {
             apr_sys::apr_hash_set(
                 self.ptr,
-                key_bytes.as_ptr() as *const std::ffi::c_void,
-                key_bytes.len() as apr_sys::apr_ssize_t,
+                key.as_ptr() as *const c_void,
+                key.len() as apr_sys::apr_ssize_t,
                 std::ptr::null_mut(),
             );
         }
     }
 
-    /// Get the value for the given key.
-    ///
-    /// The behavior depends on the value type V:
-    /// - For `&T`: Returns `None` if key doesn't exist, panics if stored value is NULL
-    /// - For `Option<&T>`: Returns `None` if key doesn't exist or stored value is NULL
-    /// - For raw pointers: Returns `None` if key doesn't exist, passes through NULL pointers
-    pub fn get(&self, key: K) -> Option<V>
-    where
-        V: FromNullablePtr<'data>,
-    {
-        let key_bytes = key.into_hash_key();
-        unsafe {
-            let ptr = apr_sys::apr_hash_get(
-                self.ptr,
-                key_bytes.as_ptr() as *const std::ffi::c_void,
-                key_bytes.len() as apr_sys::apr_ssize_t,
-            );
-            if ptr.is_null() {
-                None // Key doesn't exist
-            } else {
-                Some(V::from_nullable_ptr(ptr))
-            }
-        }
-    }
-
-    /// Check if the hash map contains the given key.
-    pub fn contains_key(&self, key: K) -> bool
-    where
-        V: FromNullablePtr<'data>,
-    {
-        self.get(key).is_some()
-    }
-
-    /// Returns the number of elements in the hash map.
+    /// Get the number of key-value pairs in the hash table.
     pub fn len(&self) -> usize {
         unsafe { apr_sys::apr_hash_count(self.ptr) as usize }
     }
 
-    /// Returns true if the hash map contains no elements.
+    /// Check if the hash table is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Clear the contents of the hash map.
+    /// Clear all entries from the hash table.
     pub fn clear(&mut self) {
-        unsafe { apr_sys::apr_hash_clear(self.ptr) }
+        unsafe {
+            apr_sys::apr_hash_clear(self.ptr);
+        }
     }
 
-    /// Returns an iterator over the key-value pairs of the hash map.
+    /// Create an iterator over the hash table entries.
+    pub fn iter(&self) -> HashIter<'pool> {
+        HashIter {
+            index: unsafe { apr_sys::apr_hash_first(std::ptr::null_mut(), self.ptr) },
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Get the raw pointer to the APR hash table.
     ///
-    /// Note: Requires a pool for APR's internal iterator allocation.
-    pub fn iter(&self, pool: &Pool) -> Iter<'data, V>
-    where
-        V: FromNullablePtr<'data>,
-    {
-        let first = unsafe { apr_sys::apr_hash_first(pool.as_mut_ptr() as *mut _, self.ptr) };
-        Iter {
-            ptr: first,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Returns an iterator over the keys of the hash map.
-    pub fn keys(&self, pool: &Pool) -> Keys {
-        let first = unsafe { apr_sys::apr_hash_first(pool.as_mut_ptr() as *mut _, self.ptr) };
-        Keys {
-            ptr: first,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Convert into an iterator over key-value pairs.
-    /// This consumes the hash and requires a pool for iteration.
-    pub fn into_iter(self, pool: &Pool) -> Iter<'data, V>
-    where
-        V: FromNullablePtr<'data>,
-    {
-        let first = unsafe { apr_sys::apr_hash_first(pool.as_mut_ptr() as *mut _, self.ptr) };
-        Iter {
-            ptr: first,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Copy this hash table to a new pool
-    pub fn copy(&self, pool: &Pool) -> Hash<'data, K, V> {
-        Hash {
-            ptr: unsafe { apr_sys::apr_hash_copy(pool.as_mut_ptr(), self.ptr) },
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Create a Hash from an iterator of key-value pairs.
-    pub fn from_iter<I>(pool: &Pool, iter: I) -> Self
-    where
-        I: IntoIterator<Item = (K, V)>,
-        V: IntoStoredPointer,
-    {
-        let mut hash = Self::new(pool);
-        for (key, value) in iter {
-            hash.insert(key, value);
-        }
-        hash
-    }
-
-    /// Return a pointer to the underlying apr_hash_t.
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
     pub unsafe fn as_ptr(&self) -> *const apr_hash_t {
         self.ptr
     }
 
-    /// Return a mutable pointer to the underlying apr_hash_t.
+    /// Get a mutable raw pointer to the APR hash table.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
     pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_hash_t {
         self.ptr
     }
 }
 
-/// An iterator over the key-value pairs of a hash map.
-pub struct Iter<'data, V> {
-    ptr: *mut apr_sys::apr_hash_index_t,
-    _phantom: PhantomData<&'data V>,
+/// Iterator over hash table entries.
+pub struct HashIter<'pool> {
+    index: *mut apr_sys::apr_hash_index_t,
+    _phantom: PhantomData<&'pool ()>,
 }
 
-impl<'data, V> Iterator for Iter<'data, V>
-where
-    V: FromNullablePtr<'data>,
-{
-    type Item = (&'data [u8], V);
+impl<'pool> Iterator for HashIter<'pool> {
+    type Item = (&'pool [u8], *mut c_void);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr.is_null() {
+        if self.index.is_null() {
             return None;
         }
+
         let mut key = std::ptr::null();
-        let mut key_len = 0;
-        let mut val: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut key_len: apr_sys::apr_ssize_t = 0;
+        let mut val: *mut c_void = std::ptr::null_mut();
+
         unsafe {
             apr_sys::apr_hash_this(
-                self.ptr,
+                self.index,
                 &mut key,
                 &mut key_len,
-                &mut val as *mut *mut std::ffi::c_void,
+                &mut val as *mut *mut c_void,
             );
         }
 
-        self.ptr = unsafe { apr_sys::apr_hash_next(self.ptr) };
+        self.index = unsafe { apr_sys::apr_hash_next(self.index) };
 
-        let key = unsafe { std::slice::from_raw_parts(key as *const u8, key_len as usize) };
-        let value = unsafe { V::from_nullable_ptr(val) };
+        // Handle null keys or invalid lengths
+        let key = if key.is_null() || key_len <= 0 {
+            &[][..]
+        } else {
+            let len = key_len as usize;
+            if len > isize::MAX as usize {
+                panic!(
+                    "Invalid key_len {} in APR hash - possible memory corruption",
+                    len
+                );
+            }
+            unsafe { std::slice::from_raw_parts(key as *const u8, len) }
+        };
 
-        Some((key, value))
+        Some((key, val))
     }
 }
 
-/// An iterator over the keys of a hash map.
-pub struct Keys {
-    ptr: *mut apr_sys::apr_hash_index_t,
-    _phantom: PhantomData<()>,
+/// A type-safe wrapper around Hash that handles reference types.
+///
+/// This provides a safer interface for common use cases where you want
+/// to store references to Rust values in the hash table.
+pub struct TypedHash<'pool, V> {
+    inner: Hash<'pool>,
+    _phantom: PhantomData<V>,
 }
 
-impl Iterator for Keys {
-    type Item = &'static [u8];
+impl<'pool, V> TypedHash<'pool, V> {
+    /// Create a new typed hash table.
+    pub fn new(pool: &'pool Pool) -> Self {
+        Self {
+            inner: Hash::new(pool),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a typed hash from an existing raw APR hash pointer.
+    ///
+    /// # Safety
+    /// The caller must ensure:
+    /// - The pointer is valid and points to an APR hash
+    /// - The hash contains values of type V (or compatible pointers)
+    /// - The hash outlives 'pool
+    pub unsafe fn from_ptr(ptr: *mut apr_hash_t) -> Self {
+        Self {
+            inner: Hash::from_ptr(ptr),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Insert a reference to a value.
+    ///
+    /// The value must outlive the pool.
+    pub fn insert_ref(&mut self, key: &str, value: &'pool V) {
+        unsafe {
+            self.inner
+                .insert(key.as_bytes(), value as *const V as *mut c_void);
+        }
+    }
+
+    /// Insert a reference with a byte slice key.
+    pub fn insert_bytes_ref(&mut self, key: &[u8], value: &'pool V) {
+        unsafe {
+            self.inner.insert(key, value as *const V as *mut c_void);
+        }
+    }
+
+    /// Get a reference to a value.
+    ///
+    /// Returns None if the key doesn't exist.
+    /// Panics if the stored value is NULL (which shouldn't happen with insert_ref).
+    pub fn get_ref(&self, key: &str) -> Option<&'pool V> {
+        self.inner.get(key.as_bytes()).map(|ptr| {
+            if ptr.is_null() {
+                panic!("Unexpected NULL value in TypedHash");
+            }
+            unsafe { &*(ptr as *const V) }
+        })
+    }
+
+    /// Get a reference with a byte slice key.
+    pub fn get_bytes_ref(&self, key: &[u8]) -> Option<&'pool V> {
+        self.inner.get(key).map(|ptr| {
+            if ptr.is_null() {
+                panic!("Unexpected NULL value in TypedHash");
+            }
+            unsafe { &*(ptr as *const V) }
+        })
+    }
+
+    /// Remove a key from the hash table.
+    pub fn remove(&mut self, key: &str) {
+        self.inner.remove(key.as_bytes());
+    }
+
+    /// Remove with a byte slice key.
+    pub fn remove_bytes(&mut self, key: &[u8]) {
+        self.inner.remove(key);
+    }
+
+    /// Get the number of entries.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Check if the hash table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Clear all entries.
+    pub fn clear(&mut self) {
+        self.inner.clear()
+    }
+
+    /// Iterate over the entries.
+    pub fn iter(&self) -> TypedHashIter<'pool, V> {
+        TypedHashIter {
+            inner: self.inner.iter(),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+/// Iterator for TypedHash.
+pub struct TypedHashIter<'pool, V> {
+    inner: HashIter<'pool>,
+    _phantom: PhantomData<V>,
+}
+
+impl<'pool, V: 'pool> Iterator for TypedHashIter<'pool, V> {
+    type Item = (&'pool [u8], &'pool V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr.is_null() {
-            return None;
-        }
-        let key = unsafe { apr_sys::apr_hash_this_key(self.ptr) };
-        let key_len = unsafe { apr_sys::apr_hash_this_key_len(self.ptr) };
-
-        self.ptr = unsafe { apr_sys::apr_hash_next(self.ptr) };
-
-        let key = unsafe { std::slice::from_raw_parts(key as *const u8, key_len as usize) };
-
-        Some(key)
+        self.inner.next().map(|(key, val)| {
+            if val.is_null() {
+                panic!("Unexpected NULL value in TypedHash iterator");
+            }
+            let value = unsafe { &*(val as *const V) };
+            (key, value)
+        })
     }
 }
 
-/// Generate a hash for a key with the default hash function.
+/// Generate a hash for a key using APR's default hash function.
 pub fn hash_default(key: &[u8]) -> u32 {
     unsafe {
         let mut len = key.len() as apr_sys::apr_ssize_t;
         apr_sys::apr_hashfunc_default(key.as_ptr() as *const std::ffi::c_char, &mut len)
+    }
+}
+
+impl<'pool> Hash<'pool> {
+    /// Create a hash table from an iterator of key-value pairs.
+    pub fn from_iter<'a, I>(pool: &'pool Pool, iter: I) -> Self
+    where
+        I: IntoIterator<Item = (&'a [u8], *mut c_void)>,
+    {
+        let mut hash = Self::new(pool);
+        for (key, value) in iter {
+            unsafe {
+                hash.insert(key, value);
+            }
+        }
+        hash
+    }
+}
+
+impl<'pool, 'a> Extend<(&'a [u8], *mut c_void)> for Hash<'pool> {
+    /// Extend the hash table with key-value pairs from an iterator.
+    /// Keys must be borrowed byte slices with stable addresses.
+    fn extend<T: IntoIterator<Item = (&'a [u8], *mut c_void)>>(&mut self, iter: T) {
+        for (key, value) in iter {
+            unsafe {
+                self.insert(key, value);
+            }
+        }
+    }
+}
+
+impl<'pool, V: 'pool> TypedHash<'pool, V> {
+    /// Create a typed hash from an iterator of key-value pairs.
+    pub fn from_iter<'a, I>(pool: &'pool Pool, iter: I) -> Self
+    where
+        I: IntoIterator<Item = (&'a str, &'pool V)>,
+        'pool: 'a,
+    {
+        let mut hash = Self::new(pool);
+        for (key, value) in iter {
+            hash.insert_ref(key, value);
+        }
+        hash
+    }
+
+    /// Create a typed hash from an iterator of byte key-value pairs.
+    pub fn from_bytes_iter<'a, I>(pool: &'pool Pool, iter: I) -> Self
+    where
+        I: IntoIterator<Item = (&'a [u8], &'pool V)>,
+        'pool: 'a,
+    {
+        let mut hash = Self::new(pool);
+        for (key, value) in iter {
+            hash.insert_bytes_ref(key, value);
+        }
+        hash
+    }
+}
+
+impl<'pool, 'a, V: 'pool> Extend<(&'a str, &'pool V)> for TypedHash<'pool, V> {
+    /// Extend the typed hash with key-value pairs from an iterator.
+    /// Keys must be borrowed strings with stable addresses.
+    fn extend<T: IntoIterator<Item = (&'a str, &'pool V)>>(&mut self, iter: T) {
+        for (key, value) in iter {
+            self.insert_ref(key, value);
+        }
+    }
+}
+
+impl<'pool, 'a, V: 'pool> Extend<(&'a [u8], &'pool V)> for TypedHash<'pool, V> {
+    /// Extend the typed hash with byte key-value pairs from an iterator.
+    /// Keys must be borrowed byte slices with stable addresses.
+    fn extend<T: IntoIterator<Item = (&'a [u8], &'pool V)>>(&mut self, iter: T) {
+        for (key, value) in iter {
+            self.insert_bytes_ref(key, value);
+        }
     }
 }
 
@@ -385,150 +383,184 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hash_default() {
-        assert_eq!(super::hash_default(b"foo"), super::hash_default(b"foo"));
-        assert_ne!(super::hash_default(b"foo"), super::hash_default(b"bar"));
-    }
-
-    #[test]
     fn test_hash_basic_operations() {
         let pool = Pool::new();
+        let mut hash = Hash::new(&pool);
 
-        // Create some data that will outlive the hash
-        let value1 = String::from("hello");
-        let value2 = String::from("world");
-
-        let mut hash: Hash<&str, &String> = Hash::new(&pool);
-        assert!(hash.is_empty());
-        assert!(hash.get("foo").is_none());
-
-        // Insert values - pass references to the data
-        hash.insert("key1", &value1);
-        hash.insert("key2", &value2);
-
-        assert!(!hash.is_empty());
-        assert_eq!(hash.len(), 2);
-
-        // Get values - returns Option<&String> since V is &String
-        assert_eq!(hash.get("key1"), Some(&value1));
-        assert_eq!(hash.get("key2"), Some(&value2));
-        assert!(hash.get("nonexistent").is_none());
-
-        // Check contains_key
-        assert!(hash.contains_key("key1"));
-        assert!(hash.contains_key("key2"));
-        assert!(!hash.contains_key("nonexistent"));
-
-        // Remove a key
-        hash.remove("key1");
-        assert_eq!(hash.len(), 1);
-        assert!(!hash.contains_key("key1"));
-        assert!(hash.get("key1").is_none());
-
-        // Clear all
-        hash.clear();
         assert!(hash.is_empty());
         assert_eq!(hash.len(), 0);
+
+        // Test with raw pointers
+        let value1 = 42i32;
+        let value2 = 84i32;
+
+        unsafe {
+            hash.insert(b"key1", &value1 as *const i32 as *mut c_void);
+            hash.insert(b"key2", &value2 as *const i32 as *mut c_void);
+        }
+
+        assert_eq!(hash.len(), 2);
+        assert!(!hash.is_empty());
+
+        // Get values back
+        let ptr1 = hash.get(b"key1").unwrap();
+        let ptr2 = hash.get(b"key2").unwrap();
+
+        unsafe {
+            assert_eq!(*(ptr1 as *const i32), 42);
+            assert_eq!(*(ptr2 as *const i32), 84);
+        }
+
+        // Remove a key
+        hash.remove(b"key1");
+        assert_eq!(hash.len(), 1);
+        assert!(hash.get(b"key1").is_none());
     }
 
     #[test]
-    fn test_hash_with_option_values() {
+    fn test_typed_hash() {
         let pool = Pool::new();
+        let mut hash = TypedHash::<String>::new(&pool);
 
-        let value = String::from("test");
+        let value1 = "hello".to_string();
+        let value2 = "world".to_string();
 
-        let mut hash: Hash<&str, Option<&String>> = Hash::new(&pool);
+        hash.insert_ref("key1", &value1);
+        hash.insert_ref("key2", &value2);
 
-        // Insert a value (Some wraps the reference)
-        hash.insert("key1", Some(&value));
+        assert_eq!(hash.len(), 2);
 
-        // Insert a NULL value
-        hash.insert("key2", None::<&String>);
+        assert_eq!(hash.get_ref("key1"), Some(&value1));
+        assert_eq!(hash.get_ref("key2"), Some(&value2));
+        assert_eq!(hash.get_ref("key3"), None);
 
-        // Get should return Some(Some(&value)) for valid data
-        assert_eq!(hash.get("key1"), Some(Some(&value)));
-
-        // APR hash treats NULL values the same as missing keys
-        // So key2 with NULL value appears as if it doesn't exist
-        assert_eq!(hash.get("key2"), None);
-
-        // Non-existent key should return None
-        assert_eq!(hash.get("nonexistent"), None);
-
-        // This demonstrates that Option<&T> can handle NULL gracefully
-        // while &T would panic on NULL
-    }
-
-    #[test]
-    fn test_hash_with_raw_pointers() {
-        let pool = Pool::new();
-
-        let value = 42i32;
-        let ptr = &value as *const i32;
-
-        let mut hash: Hash<&str, *const i32> = Hash::new(&pool);
-        hash.insert("key", ptr);
-
-        assert_eq!(hash.get("key"), Some(ptr));
-        assert_eq!(hash.get("nonexistent"), None);
+        // Test iteration
+        let items: Vec<_> = hash.iter().collect();
+        assert_eq!(items.len(), 2);
     }
 
     #[test]
     fn test_hash_iteration() {
         let pool = Pool::new();
+        let mut hash = Hash::new(&pool);
 
-        let value1 = 42i32;
-        let value2 = 84i32;
+        let value1 = 1;
+        let value2 = 2;
 
-        let mut hash: Hash<&str, &i32> = Hash::new(&pool);
-        hash.insert("key1", &value1);
-        hash.insert("key2", &value2);
+        unsafe {
+            hash.insert(b"a", &value1 as *const i32 as *mut c_void);
+            hash.insert(b"b", &value2 as *const i32 as *mut c_void);
+        }
 
-        // Test iterator
-        let items: Vec<_> = hash.iter(&pool).collect();
+        let items: Vec<_> = hash.iter().collect();
         assert_eq!(items.len(), 2);
 
-        // Verify we can find both values
-        let values: Vec<i32> = items.iter().map(|(_, v)| **v).collect();
-        assert!(values.contains(&42));
-        assert!(values.contains(&84));
-
-        // Test keys iterator
-        let keys: Vec<_> = hash.keys(&pool).collect();
-        assert_eq!(keys.len(), 2);
-
-        // Test into_iter
-        let items: Vec<_> = hash.into_iter(&pool).collect();
-        assert_eq!(items.len(), 2);
+        for (key, val) in items {
+            unsafe {
+                let value = *(val as *const i32);
+                if key == b"a" {
+                    assert_eq!(value, 1);
+                } else if key == b"b" {
+                    assert_eq!(value, 2);
+                } else {
+                    panic!("Unexpected key");
+                }
+            }
+        }
     }
 
     #[test]
-    fn test_hash_from_iter() {
+    fn test_hash_clear() {
         let pool = Pool::new();
+        let mut hash = TypedHash::<i32>::new(&pool);
 
-        let value1 = "hello".to_string();
-        let value2 = "world".to_string();
+        let value = 42;
+        hash.insert_ref("key", &value);
+        assert_eq!(hash.len(), 1);
 
-        let data = vec![("key1", &value1), ("key2", &value2)];
-        let hash: Hash<&str, &String> = Hash::from_iter(&pool, data);
+        hash.clear();
+        assert_eq!(hash.len(), 0);
+        assert!(hash.is_empty());
+    }
+
+    #[test]
+    fn test_hash_default_function() {
+        // Test that the hash function produces consistent results
+        assert_eq!(hash_default(b"foo"), hash_default(b"foo"));
+        assert_ne!(hash_default(b"foo"), hash_default(b"bar"));
+    }
+
+    #[test]
+    fn test_hash_with_empty_keys() {
+        let pool = Pool::new();
+        let mut hash = TypedHash::<i32>::new(&pool);
+
+        let val1 = 42;
+        let val2 = 84;
+
+        // Insert with empty key
+        hash.insert_bytes_ref(b"", &val1);
+        hash.insert_ref("non-empty", &val2);
 
         assert_eq!(hash.len(), 2);
-        assert_eq!(hash.get("key1"), Some(&value1));
-        assert_eq!(hash.get("key2"), Some(&value2));
+
+        // Check we can retrieve both
+        assert_eq!(hash.get_bytes_ref(b""), Some(&val1));
+        assert_eq!(hash.get_ref("non-empty"), Some(&val2));
     }
 
     #[test]
-    fn test_hash_copy() {
-        let pool1 = Pool::new();
-        let pool2 = Pool::new();
+    fn test_hash_large_keys() {
+        let pool = Pool::new();
+        let mut hash = TypedHash::<String>::new(&pool);
 
-        let value = "test".to_string();
+        let large_key = vec![b'x'; 10000];
+        let value = "large".to_string();
 
-        let mut hash1: Hash<&str, &String> = Hash::new(&pool1);
-        hash1.insert("key", &value);
+        hash.insert_bytes_ref(&large_key, &value);
+        assert_eq!(hash.get_bytes_ref(&large_key), Some(&value));
+    }
 
-        let hash2 = hash1.copy(&pool2);
-        assert_eq!(hash2.get("key"), Some(&value));
-        assert_eq!(hash1.len(), hash2.len());
+    #[test]
+    fn test_typed_hash_from_iter() {
+        let pool = Pool::new();
+
+        let val1 = "value1".to_string();
+        let val2 = "value2".to_string();
+        let val3 = "value3".to_string();
+
+        let data = vec![("key1", &val1), ("key2", &val2), ("key3", &val3)];
+
+        let hash = TypedHash::from_iter(&pool, data);
+        assert_eq!(hash.len(), 3);
+        assert_eq!(hash.get_ref("key1"), Some(&val1));
+        assert_eq!(hash.get_ref("key2"), Some(&val2));
+        assert_eq!(hash.get_ref("key3"), Some(&val3));
+    }
+
+    #[test]
+    fn test_typed_hash_extend() {
+        let pool = Pool::new();
+
+        // Create values that live for the whole test function scope
+        let val1 = "v1".to_string();
+        let val2 = "v2".to_string();
+        let val3 = "v3".to_string();
+
+        let mut hash = TypedHash::<String>::new(&pool);
+
+        hash.insert_ref("a", &val1);
+        assert_eq!(hash.len(), 1);
+        assert_eq!(hash.get_ref("a"), Some(&val1));
+
+        // Test extend with &[u8] keys (borrowed data with stable addresses)
+        hash.extend(vec![(b"b".as_slice(), &val2)]);
+        assert_eq!(hash.len(), 2);
+        assert_eq!(hash.get_bytes_ref(b"b"), Some(&val2));
+
+        // Test extend with &str keys
+        hash.extend(vec![("c", &val3)]);
+        assert_eq!(hash.len(), 3);
+        assert_eq!(hash.get_ref("c"), Some(&val3));
     }
 }

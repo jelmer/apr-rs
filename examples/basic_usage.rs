@@ -3,10 +3,10 @@
 //! This example demonstrates fundamental APR concepts that are essential
 //! when working with APR-based C libraries.
 
-use apr::hash::Hash;
-use apr::tables::Table;
+use apr::hash::{Hash, TypedHash};
+use apr::tables::StringTable;
 use apr::{Pool, Result, Status};
-use std::ffi::{CStr, CString};
+use std::ffi::c_void;
 
 fn main() -> Result<()> {
     // Memory Pools - The foundation of APR memory management
@@ -15,30 +15,38 @@ fn main() -> Result<()> {
     let _pool_ptr = root_pool.as_mut_ptr(); // Raw pointer for C interop
     drop(subpool); // Subpool cleaned up
 
-    // Hash Tables - store references to data
+    // Hash Tables - using TypedHash for string keys and values
     let config_path = "/etc/myapp.conf".to_string();
     let log_level = "debug".to_string();
     let port = "8080".to_string();
 
-    let mut hash: Hash<&str, &String> = Hash::new(&root_pool);
-    hash.insert("config_path", &config_path);
-    hash.insert("log_level", &log_level);
-    hash.insert("port", &port);
+    let mut hash = TypedHash::new(&root_pool);
+    hash.insert_ref("config_path", &config_path);
+    hash.insert_ref("log_level", &log_level);
+    hash.insert_ref("port", &port);
 
-    if let Some(path) = hash.get("config_path") {
+    if let Some(path) = hash.get_ref("config_path") {
         println!("Config path: {}", path);
     }
 
-    // APR Tables (allows duplicate keys) - tables store C strings
-    let content_type = CString::new("Content-Type: text/html").unwrap();
-    let cache_control = CString::new("Cache-Control: no-cache").unwrap();
+    // Raw Hash example - stores raw pointers
+    let mut raw_hash = Hash::new(&root_pool);
+    unsafe {
+        raw_hash.insert(b"key1", &config_path as *const _ as *mut c_void);
+        if let Some(ptr) = raw_hash.get(b"key1") {
+            let value = &*(ptr as *const String);
+            println!("Raw hash value: {}", value);
+        }
+    }
 
-    let mut table: Table<&CStr> = Table::new(&root_pool);
-    table.set("header", content_type.as_c_str());
-    table.add(
-        "header",
-        cache_control.as_c_str().to_string_lossy().as_ref(),
-    );
+    // APR Tables (allows duplicate keys) - using StringTable for convenience
+    let mut table = StringTable::new(&root_pool, 10);
+    table.set("Content-Type", "text/html");
+    table.add("Cache-Control", "no-cache");
+
+    if let Some(content_type) = table.get("Content-Type") {
+        println!("Content-Type: {}", content_type);
+    }
 
     // Error Handling
     let error_status = Status::from(apr_sys::APR_ENOENT as i32);
