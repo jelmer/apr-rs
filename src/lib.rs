@@ -2,15 +2,15 @@
 
 //! Safe Rust bindings for the Apache Portable Runtime (APR) library.
 //!
-//! This crate provides safe Rust abstractions over the Apache Portable Runtime (APR) and 
-//! APR-Util C libraries. APR is a portability layer that provides a predictable and 
+//! This crate provides safe Rust abstractions over the Apache Portable Runtime (APR) and
+//! APR-Util C libraries. APR is a portability layer that provides a predictable and
 //! consistent interface to underlying platform-specific implementations.
 //!
 //! # Primary Use Case
 //!
-//! **This crate is primarily useful when developing Rust bindings for C libraries that 
-//! depend on APR.** Many Apache projects and other C libraries use APR for cross-platform 
-//! compatibility and memory management. If you're creating Rust bindings for such libraries, 
+//! **This crate is primarily useful when developing Rust bindings for C libraries that
+//! depend on APR.** Many Apache projects and other C libraries use APR for cross-platform
+//! compatibility and memory management. If you're creating Rust bindings for such libraries,
 //! this crate provides the necessary APR functionality with a safe Rust interface.
 //!
 //! # Core Concepts
@@ -25,7 +25,7 @@
 //!
 //! // Create a root pool
 //! let pool = Pool::new();
-//! 
+//!
 //! // Create a subpool for scoped allocations
 //! let subpool = pool.create_subpool().unwrap();
 //! // Memory in subpool is freed when subpool is dropped
