@@ -305,6 +305,25 @@ pub fn pstrdup_raw(s: &str, pool: &Pool) -> Result<*const c_char, std::ffi::NulE
     Ok(pstrdup(s, pool)?.as_ptr())
 }
 
+/// Create a pool-allocated C string from a Rust string
+///
+/// This is a convenience function that allocates a null-terminated C string
+/// in the given pool's memory and returns it as a `CStr` reference.
+///
+/// # Example
+/// ```
+/// use apr::pool::Pool;
+/// use apr::strings::make_cstring;
+///
+/// let pool = Pool::new();
+/// let cstr = make_cstring("hello", &pool).unwrap();
+/// assert_eq!(cstr.to_str().unwrap(), "hello");
+/// ```
+pub fn make_cstring<'a>(s: &str, pool: &'a Pool) -> Result<&'a CStr, std::ffi::NulError> {
+    let ptr = pstrdup_raw(s, pool)?;
+    Ok(unsafe { CStr::from_ptr(ptr) })
+}
+
 /// Duplicate a limited portion of a Rust string into pool-allocated memory
 pub fn pstrndup<'a>(
     s: &str,
@@ -383,6 +402,29 @@ mod tests {
         let data = b"binary data";
         let copied = pmemdup(data, &pool);
         assert_eq!(copied, data);
+    }
+
+    #[test]
+    fn test_make_cstring() {
+        let pool = Pool::new();
+
+        // Test basic functionality
+        let cstr = make_cstring("hello world", &pool).unwrap();
+        assert_eq!(cstr.to_str().unwrap(), "hello world");
+        assert_eq!(cstr.to_bytes(), b"hello world");
+
+        // Test with empty string
+        let empty_cstr = make_cstring("", &pool).unwrap();
+        assert_eq!(empty_cstr.to_str().unwrap(), "");
+        assert_eq!(empty_cstr.to_bytes(), b"");
+
+        // Test with Unicode
+        let unicode_cstr = make_cstring("Hello, 世界!", &pool).unwrap();
+        assert_eq!(unicode_cstr.to_str().unwrap(), "Hello, 世界!");
+
+        // Test that null bytes in the middle cause an error
+        let result = make_cstring("hello\0world", &pool);
+        assert!(result.is_err());
     }
 
     #[test]
