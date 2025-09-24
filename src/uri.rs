@@ -192,6 +192,11 @@ impl<'pool> Uri<'pool> {
     }
 
     /// Get a mutable raw pointer to the underlying apr_uri_t
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that any modifications made through the returned
+    /// pointer are valid and do not violate APR's invariants.
     pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_uri_t {
         self.ptr
     }

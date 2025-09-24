@@ -196,7 +196,6 @@ mod tests {
     #[test]
     fn test_time_traits() {
         let time1 = Time::now();
-        let time2 = Time::default(); // Should be same as now()
 
         // Test Display
         let display_str = format!("{}", time1);

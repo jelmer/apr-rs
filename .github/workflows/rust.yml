@@ -27,13 +27,12 @@ jobs:
       run: |
         brew install apr-util apr pkg-config utf8proc
         echo "$(brew --prefix)/opt/pkg-config/bin" >> $GITHUB_PATH
+        echo "PKG_CONFIG_PATH=/opt/homebrew/opt/apr-util/lib/pkgconfig:/opt/homebrew/opt/apr/lib/pkgconfig" >> $GITHUB_ENV
         pkg-config --list-all
       if: "matrix.os == 'macos-latest'"
     - name: Build
       run: cargo build --verbose
-      env:
-        PKG_CONFIG_PATH: "/opt/homebrew/opt/apr-util/lib/pkgconfig:/opt/homebrew/opt/apr/lib/pkgconfig"
     - name: Run tests
       run: cargo test --verbose
-      env:
-        PKG_CONFIG_PATH: "/opt/homebrew/opt/apr-util/lib/pkgconfig:/opt/homebrew/opt/apr/lib/pkgconfig"
+    - name: Run tests with all features
+      run: cargo test --all-features --verbose

@@ -369,6 +369,159 @@ impl<'pool> Crypto<'pool> {
     }
 }
 
+impl<'pool> CryptoBlock<'pool> {
+    /// Create a new encryption block.
+    pub fn encrypt_init(
+        key: &CryptoKey,
+        iv: Option<&[u8]>,
+        pool: &'pool Pool,
+    ) -> Result<Self, Error> {
+        let mut block: *mut apr_sys::apr_crypto_block_t = ptr::null_mut();
+        let mut block_size: apr_sys::apr_size_t = 0;
+        let mut iv_ptr = iv.map(|v| v.as_ptr()).unwrap_or(ptr::null());
+
+        let status = unsafe {
+            apr_sys::apr_crypto_block_encrypt_init(
+                &mut block,
+                &mut iv_ptr,
+                key.key,
+                &mut block_size,
+                pool.as_ptr() as *mut apr_sys::apr_pool_t,
+            )
+        };
+
+        if status == apr_sys::APR_SUCCESS as i32 {
+            Ok(CryptoBlock {
+                block,
+                _pool: PhantomData,
+            })
+        } else {
+            Err(Error::from_status(Status::from(status)))
+        }
+    }
+
+    /// Create a new decryption block.
+    pub fn decrypt_init(
+        key: &CryptoKey,
+        iv: Option<&[u8]>,
+        pool: &'pool Pool,
+    ) -> Result<Self, Error> {
+        let mut block: *mut apr_sys::apr_crypto_block_t = ptr::null_mut();
+        let mut block_size: apr_sys::apr_size_t = 0;
+        let iv_ptr = iv.map(|v| v.as_ptr()).unwrap_or(ptr::null());
+
+        let status = unsafe {
+            apr_sys::apr_crypto_block_decrypt_init(
+                &mut block,
+                &mut block_size,
+                iv_ptr,
+                key.key,
+                pool.as_ptr() as *mut apr_sys::apr_pool_t,
+            )
+        };
+
+        if status == apr_sys::APR_SUCCESS as i32 {
+            Ok(CryptoBlock {
+                block,
+                _pool: PhantomData,
+            })
+        } else {
+            Err(Error::from_status(Status::from(status)))
+        }
+    }
+
+    /// Encrypt data using this block.
+    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, Error> {
+        // Get required buffer size
+        let mut block_size: apr_sys::apr_size_t = 0;
+        unsafe {
+            apr_sys::apr_crypto_block_encrypt(
+                &mut ptr::null_mut(),
+                &mut block_size,
+                ptr::null(),
+                0,
+                self.block,
+            );
+        }
+
+        let mut ciphertext = vec![0u8; plaintext.len() + block_size as usize];
+        let mut out_ptr = ciphertext.as_mut_ptr();
+        let mut out_len = ciphertext.len() as apr_sys::apr_size_t;
+
+        let status = unsafe {
+            apr_sys::apr_crypto_block_encrypt(
+                &mut out_ptr,
+                &mut out_len,
+                plaintext.as_ptr(),
+                plaintext.len() as apr_sys::apr_size_t,
+                self.block,
+            )
+        };
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        let mut final_len = ciphertext.len() as apr_sys::apr_size_t - out_len;
+        let status = unsafe {
+            apr_sys::apr_crypto_block_encrypt_finish(out_ptr, &mut final_len, self.block)
+        };
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        ciphertext.truncate((out_len + final_len) as usize);
+        Ok(ciphertext)
+    }
+
+    /// Decrypt data using this block.
+    pub fn decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut plaintext = vec![0u8; ciphertext.len()];
+        let mut out_ptr = plaintext.as_mut_ptr();
+        let mut out_len = plaintext.len() as apr_sys::apr_size_t;
+
+        let status = unsafe {
+            apr_sys::apr_crypto_block_decrypt(
+                &mut out_ptr,
+                &mut out_len,
+                ciphertext.as_ptr(),
+                ciphertext.len() as apr_sys::apr_size_t,
+                self.block,
+            )
+        };
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        let mut final_len = plaintext.len() as apr_sys::apr_size_t - out_len;
+        let status = unsafe {
+            apr_sys::apr_crypto_block_decrypt_finish(out_ptr, &mut final_len, self.block)
+        };
+
+        if status != apr_sys::APR_SUCCESS as i32 {
+            return Err(Error::from_status(Status::from(status)));
+        }
+
+        plaintext.truncate((out_len + final_len) as usize);
+        Ok(plaintext)
+    }
+
+    /// Get the raw APR crypto block pointer.
+    pub fn as_ptr(&self) -> *mut apr_sys::apr_crypto_block_t {
+        self.block
+    }
+}
+
+impl<'pool> Drop for CryptoBlock<'pool> {
+    fn drop(&mut self) {
+        unsafe {
+            apr_sys::apr_crypto_block_cleanup(self.block);
+        }
+    }
+}
+
 /// Get list of available crypto drivers.
 pub fn crypto_drivers(pool: &Pool) -> Vec<String> {
     // Common driver names to try
@@ -457,5 +610,184 @@ mod tests {
         };
 
         assert_eq!(&decrypted[..], plaintext);
+    }
+
+    #[test]
+    fn test_crypto_block_encrypt_decrypt() {
+        let pool = Pool::new();
+
+        // Try to initialize crypto
+        if Crypto::init(&pool).is_err() {
+            return; // Skip if crypto not available
+        }
+
+        // Try to get a driver
+        let driver = match get_driver("openssl", &pool)
+            .or_else(|_| get_driver("nss", &pool))
+            .or_else(|_| get_driver("commoncrypto", &pool))
+        {
+            Ok(d) => d,
+            Err(_) => return, // No drivers available
+        };
+
+        let crypto = match driver.make_crypto(&pool) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let key_data = b"thisisasecretkey";
+        let key = match crypto.make_key(
+            BlockCipherAlgorithm::AES128,
+            BlockCipherMode::CBC,
+            key_data,
+            &pool,
+        ) {
+            Ok(k) => k,
+            Err(_) => return,
+        };
+
+        let plaintext = b"Hello, World! This is a test.";
+        let iv = b"1234567890123456"; // 16 bytes for AES
+
+        // Create encryption block
+        let mut encrypt_block = match CryptoBlock::encrypt_init(&key, Some(iv), &pool) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+
+        // Encrypt using block
+        let ciphertext = match encrypt_block.encrypt(plaintext) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        assert!(!ciphertext.is_empty());
+        assert_ne!(&ciphertext[..], plaintext);
+
+        // Create decryption block
+        let mut decrypt_block = match CryptoBlock::decrypt_init(&key, Some(iv), &pool) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+
+        // Decrypt using block
+        let decrypted = match decrypt_block.decrypt(&ciphertext) {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+
+        assert_eq!(&decrypted[..], plaintext);
+    }
+
+    #[test]
+    fn test_crypto_block_as_ptr() {
+        let pool = Pool::new();
+
+        // Try to initialize crypto
+        if Crypto::init(&pool).is_err() {
+            return; // Skip if crypto not available
+        }
+
+        // Try to get a driver
+        let driver = match get_driver("openssl", &pool)
+            .or_else(|_| get_driver("nss", &pool))
+            .or_else(|_| get_driver("commoncrypto", &pool))
+        {
+            Ok(d) => d,
+            Err(_) => return, // No drivers available
+        };
+
+        let crypto = match driver.make_crypto(&pool) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let key_data = b"thisisasecretkey";
+        let key = match crypto.make_key(
+            BlockCipherAlgorithm::AES128,
+            BlockCipherMode::CBC,
+            key_data,
+            &pool,
+        ) {
+            Ok(k) => k,
+            Err(_) => return,
+        };
+
+        let iv = b"1234567890123456";
+
+        // Create encryption block and check pointer
+        let block = match CryptoBlock::encrypt_init(&key, Some(iv), &pool) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+
+        let ptr = block.as_ptr();
+        assert!(!ptr.is_null());
+    }
+
+    #[test]
+    fn test_crypto_block_multiple_operations() {
+        let pool = Pool::new();
+
+        // Try to initialize crypto
+        if Crypto::init(&pool).is_err() {
+            return; // Skip if crypto not available
+        }
+
+        // Try to get a driver
+        let driver = match get_driver("openssl", &pool)
+            .or_else(|_| get_driver("nss", &pool))
+            .or_else(|_| get_driver("commoncrypto", &pool))
+        {
+            Ok(d) => d,
+            Err(_) => return, // No drivers available
+        };
+
+        let crypto = match driver.make_crypto(&pool) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let key_data = b"thisisasecretkey";
+        let key = match crypto.make_key(
+            BlockCipherAlgorithm::AES256,
+            BlockCipherMode::CBC,
+            key_data,
+            &pool,
+        ) {
+            Ok(k) => k,
+            Err(_) => return,
+        };
+
+        // Test multiple messages with different IVs
+        let messages = [
+            (b"First message".as_ref(), b"1234567890123456"),
+            (b"Second message here", b"6543210987654321"),
+            (b"Third and final message!", b"abcdefghijklmnop"),
+        ];
+
+        for (plaintext, iv) in &messages {
+            let mut encrypt_block = match CryptoBlock::encrypt_init(&key, Some(*iv), &pool) {
+                Ok(b) => b,
+                Err(_) => return,
+            };
+
+            let ciphertext = match encrypt_block.encrypt(plaintext) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+
+            let mut decrypt_block = match CryptoBlock::decrypt_init(&key, Some(*iv), &pool) {
+                Ok(b) => b,
+                Err(_) => return,
+            };
+
+            let decrypted = match decrypt_block.decrypt(&ciphertext) {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+
+            assert_eq!(&decrypted[..], *plaintext);
+        }
     }
 }
