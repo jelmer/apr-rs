@@ -98,10 +98,8 @@ impl CLibraryWrapper {
         let subpool = Pool::new();
 
         // Execute the operation with the subpool
-        let result = operation(&subpool);
-
         // Subpool is automatically cleaned up when dropped
-        result
+        operation(&subpool)
     }
 }
 

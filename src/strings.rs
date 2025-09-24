@@ -442,6 +442,8 @@ mod tests {
 
         // Test Clone, Copy
         let bstr2 = bstr;
+        // Intentionally testing that Clone works even though Copy is implemented
+        #[allow(clippy::clone_on_copy)]
         let bstr3 = bstr.clone();
         assert_eq!(bstr, bstr2);
         assert_eq!(bstr2, bstr3);
