@@ -200,7 +200,7 @@ impl<'a> SockAddr<'a> {
 
     /// Get the port number
     pub fn port(&self) -> u16 {
-        unsafe { (*self.raw).port as u16 }
+        unsafe { (*self.raw).port }
     }
 
     /// Get the address family

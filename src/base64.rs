@@ -25,7 +25,7 @@ pub fn base64_encode(data: &[u8]) -> String {
     unsafe {
         apr_sys::apr_base64_encode_binary(
             encoded.as_mut_ptr() as *mut i8,
-            data.as_ptr() as *const u8,
+            data.as_ptr(),
             data.len() as i32,
         );
     }

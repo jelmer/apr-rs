@@ -122,7 +122,7 @@ pub fn contains(pattern: &str, haystack: &str, case_sensitive: bool) -> bool {
 }
 
 /// Find all occurrences of a pattern in a string (pool-exposed API).
-pub fn find_all<'a>(pattern: &StrMatch, haystack: &'a str) -> Vec<usize> {
+pub fn find_all(pattern: &StrMatch, haystack: &str) -> Vec<usize> {
     let mut matches = Vec::new();
     let _bytes = haystack.as_bytes();
     let mut offset = 0;

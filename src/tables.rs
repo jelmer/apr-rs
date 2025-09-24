@@ -337,7 +337,6 @@ impl<'pool> Table<'pool> {
 /// A type-safe wrapper for tables with string values.
 pub struct StringTable<'pool> {
     inner: Table<'pool>,
-    pool: &'pool Pool,
 }
 
 impl<'pool> StringTable<'pool> {
@@ -345,7 +344,6 @@ impl<'pool> StringTable<'pool> {
     pub fn new(pool: &'pool Pool, initial_size: i32) -> Self {
         Self {
             inner: Table::new(pool, initial_size),
-            pool,
         }
     }
 
@@ -356,10 +354,9 @@ impl<'pool> StringTable<'pool> {
     /// - The pointer is valid and points to an APR table
     /// - The table contains valid C strings
     /// - The table outlives 'pool
-    pub unsafe fn from_ptr(ptr: *mut apr_table_t, pool: &'pool Pool) -> Self {
+    pub unsafe fn from_ptr(ptr: *mut apr_table_t, _pool: &'pool Pool) -> Self {
         Self {
             inner: Table::from_ptr(ptr),
-            pool,
         }
     }
 

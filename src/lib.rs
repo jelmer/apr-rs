@@ -211,3 +211,10 @@ fn init() {
         apr_sys::apr_initialize();
     }
 }
+
+#[ctor::dtor]
+fn cleanup() {
+    unsafe {
+        apr_sys::apr_terminate();
+    }
+}
