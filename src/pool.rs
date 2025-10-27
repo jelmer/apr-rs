@@ -50,7 +50,7 @@ impl Pool {
 
     #[cfg(feature = "pool-debug")]
     /// Create a new pool with debug information.
-    /// 
+    ///
     /// This is used for debugging memory pool issues and tracking where pools are created.
     pub fn new_debug(location: &str) -> Self {
         let mut pool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
@@ -199,7 +199,7 @@ impl Pool {
 
     #[cfg(feature = "pool-debug")]
     /// Get the number of bytes allocated in this pool.
-    /// 
+    ///
     /// If `recurse` is true, includes bytes from all subpools.
     pub fn num_bytes(&self, recurse: bool) -> usize {
         unsafe { apr_sys::apr_pool_num_bytes(self.raw, if recurse { 1 } else { 0 }) }
@@ -207,9 +207,9 @@ impl Pool {
 
     #[cfg(feature = "pool-debug")]
     /// Find the pool that owns the given pointer.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The pointer must be a valid pointer that was allocated from an APR pool.
     pub unsafe fn find(&self, ptr: *const std::ffi::c_void) -> Option<Pool> {
         let pool = apr_sys::apr_pool_find(ptr);
