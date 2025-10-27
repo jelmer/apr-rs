@@ -205,6 +205,36 @@ macro_rules! apr_hash {
     }};
 }
 
+// APR initialization via ctor (runs before any threads are created).
+//
+// APR requires apr_initialize() to be called in a single-threaded context.
+// The ctor runs at library load time, before test threads are created, satisfying this requirement.
+//
+// We intentionally do NOT call apr_terminate() in a dtor because:
+//
+// 1. In multi-threaded applications, dtors can run while threads still exist or are being torn down,
+//    leading to SIGSEGV crashes if apr_terminate() is called while APR pools are in use.
+//
+// 2. The most problematic case is `cargo test`, where the destructor can be called while test
+//    threads are still running (observed crashes on macOS with ctor 0.6.0).
+//
+// 3. However, the same issue can occur in production applications with:
+//    - Detached threads or thread pools
+//    - Signal handlers (SIGTERM, SIGINT)
+//    - Panic unwinding
+//    - Other global destructors running in undefined order
+//
+// 4. APR documentation itself recommends using `atexit(apr_terminate)` rather than destructor
+//    mechanisms, acknowledging the cleanup timing challenges.
+//
+// 5. For short-running programs, the OS will reclaim all memory on process exit anyway, making
+//    explicit apr_terminate() unnecessary. For long-running programs, the risk of crashes
+//    outweighs the benefit of explicit cleanup.
+//
+// Related issues:
+// - https://github.com/mmastrac/rust-ctor/issues/8
+// - https://github.com/rust-lang/cargo/issues/5438
+// - https://dev.apr.apache.narkive.com/cHRvpf93/thread-safety-of-apr-initialize
 #[ctor::ctor]
 fn init() {
     unsafe {
@@ -212,8 +242,103 @@ fn init() {
     }
 }
 
-#[ctor::dtor]
-fn cleanup() {
+// No dtor: intentionally allow OS to clean up on process exit to avoid crashes
+// in multi-threaded scenarios (both tests and production applications).
+
+/// Initialize the APR library.
+///
+/// # Safety
+///
+/// This function is automatically called via `#[ctor::ctor]` at library load time, before any
+/// threads are created. **You should not need to call this function manually** in normal usage.
+///
+/// However, if you need explicit control over APR initialization (for example, in testing
+/// scenarios or when dynamically loading/unloading APR), you can call this function.
+///
+/// ## Safety Requirements
+///
+/// 1. **Single-threaded context**: APR requires `apr_initialize()` to be called in a
+///    single-threaded context before any threads are created. Calling this from a
+///    multi-threaded context will lead to undefined behavior.
+///
+/// 2. **Multiple calls**: It is safe to call this function multiple times, but each call
+///    must be balanced with a corresponding call to [`terminate()`]. APR maintains an
+///    internal reference count.
+///
+/// 3. **Already initialized**: Since this crate automatically initializes APR at load time,
+///    calling this function will increment APR's internal initialization count, requiring
+///    an additional [`terminate()`] call to fully shut down APR.
+///
+/// # Examples
+///
+/// ```no_run
+/// use apr;
+///
+/// // Only call from single-threaded context before any threads exist
+/// unsafe {
+///     apr::initialize();
+/// }
+///
+/// // ... use APR ...
+///
+/// // Must balance with terminate if you called initialize
+/// unsafe {
+///     apr::terminate();
+/// }
+/// ```
+pub unsafe fn initialize() {
+    unsafe {
+        apr_sys::apr_initialize();
+    }
+}
+
+/// Terminate the APR library and clean up all internal data structures.
+///
+/// # Safety
+///
+/// This function is **extremely dangerous** and should be used with great caution:
+///
+/// 1. **Multi-threading hazard**: If any thread is using APR when this is called, the program
+///    will crash with SIGSEGV. This includes background threads, thread pools, or any thread
+///    that might be accessing APR pools.
+///
+/// 2. **Pool destruction**: All APR pools will be destroyed. Any subsequent use of Pool objects
+///    or data allocated from pools will result in undefined behavior.
+///
+/// 3. **Global state**: APR maintains global state. After calling this function, creating new
+///    pools or using any APR functionality will fail or cause undefined behavior.
+///
+/// # When to Use This
+///
+/// In most cases, **you should not call this function**. The operating system will clean up
+/// all APR memory when the process exits. This function is only useful in very specific
+/// scenarios:
+///
+/// - Long-running processes that load/unload APR dynamically
+/// - Testing scenarios where you need to verify resource cleanup
+/// - Applications that explicitly manage APR lifecycle and can guarantee all threads have
+///   stopped using APR
+///
+/// # Alternative
+///
+/// APR documentation recommends using `std::process::exit()` or allowing normal program
+/// termination rather than explicitly calling `apr_terminate()`.
+///
+/// # Examples
+///
+/// ```no_run
+/// use apr;
+///
+/// // Ensure all threads have finished and no APR objects are in use
+/// // ... join all threads, drop all pools, etc ...
+///
+/// // Only then is it safe to call terminate
+/// unsafe {
+///     apr::terminate();
+/// }
+/// // After this point, APR cannot be used
+/// ```
+pub unsafe fn terminate() {
     unsafe {
         apr_sys::apr_terminate();
     }
