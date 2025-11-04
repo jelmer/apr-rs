@@ -1,8 +1,8 @@
 //! UUID generation functionality from apr-util.
 
 use crate::{Error, Status};
-use std::ffi::CStr;
 use std::ffi::c_char;
+use std::ffi::CStr;
 use std::fmt;
 
 /// A universally unique identifier (UUID).

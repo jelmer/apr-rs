@@ -1,8 +1,8 @@
 //! Network I/O with safe socket wrappers
 
 use crate::{pool::Pool, Result};
-use std::ffi::{CStr, CString};
 use std::ffi::c_char;
+use std::ffi::{CStr, CString};
 use std::marker::PhantomData;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr;
@@ -313,8 +313,9 @@ impl<'a> Socket<'a> {
     /// Receive data from the socket
     pub fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut len = buf.len();
-        let status =
-            unsafe { apr_sys::apr_socket_recv(self.raw, buf.as_mut_ptr() as *mut c_char, &mut len) };
+        let status = unsafe {
+            apr_sys::apr_socket_recv(self.raw, buf.as_mut_ptr() as *mut c_char, &mut len)
+        };
 
         if status != apr_sys::APR_SUCCESS as i32 && status != apr_sys::APR_EOF as i32 {
             return Err(crate::Error::from_status(status.into()));
@@ -327,7 +328,13 @@ impl<'a> Socket<'a> {
     pub fn sendto(&mut self, data: &[u8], addr: &SockAddr) -> Result<usize> {
         let mut len = data.len();
         let status = unsafe {
-            apr_sys::apr_socket_sendto(self.raw, addr.raw, 0, data.as_ptr() as *const c_char, &mut len)
+            apr_sys::apr_socket_sendto(
+                self.raw,
+                addr.raw,
+                0,
+                data.as_ptr() as *const c_char,
+                &mut len,
+            )
         };
 
         if status != apr_sys::APR_SUCCESS as i32 {

@@ -1,8 +1,8 @@
 //! Base64 encoding and decoding functionality from apr-util.
 
 use crate::{Error, Status};
-use std::ffi::CString;
 use std::ffi::c_char;
+use std::ffi::CString;
 
 /// Get the length of the encoded base64 string for a given input length.
 pub fn base64_encode_len(len: usize) -> usize {

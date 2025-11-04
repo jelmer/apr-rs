@@ -4,8 +4,8 @@
 
 use crate::pool::Pool;
 use crate::{Error, Status};
-use std::ffi::CStr;
 use std::ffi::c_char;
+use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::ptr;
 
