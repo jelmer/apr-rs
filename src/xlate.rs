@@ -5,6 +5,7 @@
 use crate::pool::Pool;
 use crate::{Error, Status};
 use std::ffi::CString;
+use std::ffi::c_char;
 use std::marker::PhantomData;
 use std::ptr;
 
@@ -52,8 +53,8 @@ impl<'pool> Xlate<'pool> {
         let mut outbytes_left = inbytes_left * 4; // Allocate extra space for worst case
         let mut output = vec![0u8; outbytes_left];
 
-        let inbuf_ptr = input_bytes.as_ptr() as *const i8;
-        let outbuf_ptr = output.as_mut_ptr() as *mut i8;
+        let inbuf_ptr = input_bytes.as_ptr() as *const c_char;
+        let outbuf_ptr = output.as_mut_ptr() as *mut c_char;
 
         let status = unsafe {
             apr_sys::apr_xlate_conv_buffer(
@@ -81,8 +82,8 @@ impl<'pool> Xlate<'pool> {
         let mut outbytes_left = inbytes_left * 4; // Allocate extra space for worst case
         let mut output = vec![0u8; outbytes_left];
 
-        let inbuf_ptr = input.as_ptr() as *const i8;
-        let outbuf_ptr = output.as_mut_ptr() as *mut i8;
+        let inbuf_ptr = input.as_ptr() as *const c_char;
+        let outbuf_ptr = output.as_mut_ptr() as *mut c_char;
 
         let status = unsafe {
             apr_sys::apr_xlate_conv_buffer(

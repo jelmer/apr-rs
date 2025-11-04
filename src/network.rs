@@ -2,6 +2,7 @@
 
 use crate::{pool::Pool, Result};
 use std::ffi::{CStr, CString};
+use std::ffi::c_char;
 use std::marker::PhantomData;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr;
@@ -300,7 +301,7 @@ impl<'a> Socket<'a> {
     pub fn send(&mut self, data: &[u8]) -> Result<usize> {
         let mut len = data.len();
         let status =
-            unsafe { apr_sys::apr_socket_send(self.raw, data.as_ptr() as *const i8, &mut len) };
+            unsafe { apr_sys::apr_socket_send(self.raw, data.as_ptr() as *const c_char, &mut len) };
 
         if status != apr_sys::APR_SUCCESS as i32 {
             return Err(crate::Error::from_status(status.into()));
@@ -313,7 +314,7 @@ impl<'a> Socket<'a> {
     pub fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut len = buf.len();
         let status =
-            unsafe { apr_sys::apr_socket_recv(self.raw, buf.as_mut_ptr() as *mut i8, &mut len) };
+            unsafe { apr_sys::apr_socket_recv(self.raw, buf.as_mut_ptr() as *mut c_char, &mut len) };
 
         if status != apr_sys::APR_SUCCESS as i32 && status != apr_sys::APR_EOF as i32 {
             return Err(crate::Error::from_status(status.into()));
@@ -326,7 +327,7 @@ impl<'a> Socket<'a> {
     pub fn sendto(&mut self, data: &[u8], addr: &SockAddr) -> Result<usize> {
         let mut len = data.len();
         let status = unsafe {
-            apr_sys::apr_socket_sendto(self.raw, addr.raw, 0, data.as_ptr() as *const i8, &mut len)
+            apr_sys::apr_socket_sendto(self.raw, addr.raw, 0, data.as_ptr() as *const c_char, &mut len)
         };
 
         if status != apr_sys::APR_SUCCESS as i32 {
@@ -346,7 +347,7 @@ impl<'a> Socket<'a> {
                 from_addr,
                 self.raw,
                 0,
-                buf.as_mut_ptr() as *mut i8,
+                buf.as_mut_ptr() as *mut c_char,
                 &mut len,
             )
         };
@@ -459,7 +460,7 @@ impl<'a> Drop for Socket<'a> {
 
 /// Get the hostname of the local machine
 pub fn hostname_get(pool: &Pool) -> Result<String> {
-    let hostname_buf = unsafe { apr_sys::apr_palloc(pool.as_mut_ptr(), 256) as *mut i8 };
+    let hostname_buf = unsafe { apr_sys::apr_palloc(pool.as_mut_ptr(), 256) as *mut c_char };
 
     if hostname_buf.is_null() {
         return Err(crate::Error::from_status(apr_sys::APR_ENOMEM.into()));

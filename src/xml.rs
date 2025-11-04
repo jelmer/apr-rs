@@ -5,6 +5,7 @@
 use crate::pool::Pool;
 use crate::{Error, Status};
 use std::ffi::CStr;
+use std::ffi::c_char;
 use std::marker::PhantomData;
 use std::ptr;
 
@@ -53,7 +54,7 @@ impl<'pool> XmlParser<'pool> {
         let status = unsafe {
             apr_sys::apr_xml_parser_feed(
                 self.parser,
-                data.as_ptr() as *const i8,
+                data.as_ptr() as *const c_char,
                 data.len() as apr_sys::apr_size_t,
             )
         };
@@ -83,7 +84,7 @@ impl<'pool> XmlParser<'pool> {
 
     /// Get error information if parsing failed.
     pub fn get_error(&self) -> Option<String> {
-        let mut errbuf = [0i8; 200];
+        let mut errbuf = [0 as c_char; 200];
         let errbufsize = errbuf.len() as apr_sys::apr_size_t;
 
         unsafe {
@@ -117,7 +118,7 @@ impl<'pool> XmlDoc<'pool> {
 
     /// Convert the document to a string representation.
     pub fn to_string(&self, pool: &Pool, style: i32) -> Result<String, Error> {
-        let mut buf_ptr: *const i8 = ptr::null();
+        let mut buf_ptr: *const c_char = ptr::null();
 
         unsafe {
             apr_sys::apr_xml_to_text(
