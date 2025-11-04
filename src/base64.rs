@@ -1,6 +1,7 @@
 //! Base64 encoding and decoding functionality from apr-util.
 
 use crate::{Error, Status};
+use std::ffi::c_char;
 use std::ffi::CString;
 
 /// Get the length of the encoded base64 string for a given input length.
@@ -24,7 +25,7 @@ pub fn base64_encode(data: &[u8]) -> String {
 
     unsafe {
         apr_sys::apr_base64_encode_binary(
-            encoded.as_mut_ptr() as *mut i8,
+            encoded.as_mut_ptr() as *mut c_char,
             data.as_ptr(),
             data.len() as i32,
         );

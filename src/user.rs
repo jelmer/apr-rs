@@ -2,6 +2,7 @@
 
 use crate::{pool::Pool, Result};
 use std::ffi::{CStr, CString};
+use std::ffi::c_char;
 use std::marker::PhantomData;
 use std::ptr;
 
@@ -58,7 +59,7 @@ pub fn get_user_by_name(username: &str, pool: &Pool) -> Result<User> {
     }
 
     // Get additional user info if available
-    let mut user_name: *mut i8 = ptr::null_mut();
+    let mut user_name: *mut c_char = ptr::null_mut();
     let status = unsafe {
         apr_sys::apr_uid_get(&mut user_name, &mut uid, pool.as_mut_ptr())
     };
@@ -80,7 +81,7 @@ pub fn get_user_by_name(username: &str, pool: &Pool) -> Result<User> {
 }
 
 pub fn get_user_by_id(uid: u32, pool: &Pool) -> Result<User> {
-    let mut user_name: *mut i8 = ptr::null_mut();
+    let mut user_name: *mut c_char = ptr::null_mut();
     let mut apr_uid = uid as apr_sys::apr_uid_t;
 
     let status = unsafe {
@@ -129,7 +130,7 @@ pub fn get_group_by_name(groupname: &str, pool: &Pool) -> Result<Group> {
 }
 
 pub fn get_group_by_id(gid: u32, pool: &Pool) -> Result<Group> {
-    let mut group_name: *mut i8 = ptr::null_mut();
+    let mut group_name: *mut c_char = ptr::null_mut();
     let mut apr_gid = gid as apr_sys::apr_gid_t;
 
     let status = unsafe {
@@ -162,7 +163,7 @@ pub fn get_current_group_id() -> u32 {
 }
 
 pub fn get_home_directory(pool: &Pool) -> Result<String> {
-    let mut homedir: *mut i8 = ptr::null_mut();
+    let mut homedir: *mut c_char = ptr::null_mut();
 
     let status = unsafe {
         apr_sys::apr_uid_homepath_get(&mut homedir, ptr::null(), pool.as_mut_ptr())
@@ -185,7 +186,7 @@ pub fn get_user_home_directory(username: &str, pool: &Pool) -> Result<String> {
     let c_username = CString::new(username)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
-    let mut homedir: *mut i8 = ptr::null_mut();
+    let mut homedir: *mut c_char = ptr::null_mut();
 
     let status = unsafe {
         apr_sys::apr_uid_homepath_get(&mut homedir, c_username.as_ptr(), pool.as_mut_ptr())

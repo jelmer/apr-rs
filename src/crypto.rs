@@ -5,6 +5,7 @@
 
 use crate::pool::Pool;
 use crate::{Error, Status};
+use std::ffi::c_char;
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::ptr;
@@ -124,7 +125,7 @@ pub fn get_driver<'pool>(name: &str, pool: &'pool Pool) -> Result<CryptoDriver<'
         .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?;
 
     let mut driver: *const apr_sys::apr_crypto_driver_t = ptr::null();
-    let params_ptr: *const i8 = ptr::null();
+    let params_ptr: *const c_char = ptr::null();
     let mut error_ptr: *const apr_sys::apu_err_t = ptr::null();
 
     let status = unsafe {
@@ -164,7 +165,7 @@ impl<'pool> CryptoDriver<'pool> {
     /// Create a crypto factory from this driver.
     pub fn make_crypto(&self, pool: &'pool Pool) -> Result<Crypto<'pool>, Error> {
         let mut factory: *mut apr_sys::apr_crypto_t = ptr::null_mut();
-        let params_ptr: *const i8 = ptr::null();
+        let params_ptr: *const c_char = ptr::null();
 
         let status = unsafe {
             apr_sys::apr_crypto_make(
@@ -202,7 +203,7 @@ impl<'pool> Crypto<'pool> {
             apr_sys::apr_crypto_passphrase(
                 &mut key,
                 &mut iv_size,
-                key_data.as_ptr() as *const i8,
+                key_data.as_ptr() as *const c_char,
                 key_data.len() as apr_sys::apr_size_t,
                 ptr::null(), // salt
                 0,           // saltLen

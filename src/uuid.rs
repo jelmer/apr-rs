@@ -1,6 +1,7 @@
 //! UUID generation functionality from apr-util.
 
 use crate::{Error, Status};
+use std::ffi::c_char;
 use std::ffi::CStr;
 use std::fmt;
 
@@ -43,9 +44,9 @@ impl Uuid {
     pub fn format(&self) -> String {
         let mut buffer = vec![0u8; 37]; // 36 chars + null terminator
         unsafe {
-            apr_sys::apr_uuid_format(buffer.as_mut_ptr() as *mut i8, &self.uuid);
+            apr_sys::apr_uuid_format(buffer.as_mut_ptr() as *mut c_char, &self.uuid);
         }
-        let c_str = unsafe { CStr::from_ptr(buffer.as_ptr() as *const i8) };
+        let c_str = unsafe { CStr::from_ptr(buffer.as_ptr() as *const c_char) };
         c_str.to_string_lossy().into_owned()
     }
 

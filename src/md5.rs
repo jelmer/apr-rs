@@ -2,6 +2,7 @@
 
 use crate::pool::Pool;
 use crate::{Error, Status};
+use std::ffi::c_char;
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
@@ -98,13 +99,13 @@ pub fn md5_encode_password(password: &str, salt: &str) -> Result<String, Error> 
         apr_sys::apr_md5_encode(
             password_cstr.as_ptr(),
             salt_cstr.as_ptr(),
-            result_buf.as_mut_ptr() as *mut i8,
+            result_buf.as_mut_ptr() as *mut c_char,
             result_buf.len() as apr_sys::apr_size_t,
         )
     };
 
     if status == apr_sys::APR_SUCCESS as i32 {
-        let cstr = unsafe { CStr::from_ptr(result_buf.as_ptr() as *const i8) };
+        let cstr = unsafe { CStr::from_ptr(result_buf.as_ptr() as *const c_char) };
         Ok(cstr.to_string_lossy().into_owned())
     } else {
         Err(Error::from_status(Status::from(status)))

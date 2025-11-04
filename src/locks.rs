@@ -2,6 +2,7 @@
 
 use crate::{pool::Pool, Result};
 use std::ffi::CString;
+use std::ffi::c_char;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::ptr;
@@ -221,7 +222,7 @@ impl<'a> Drop for GlobalMutex<'a> {
 }
 
 pub fn proc_mutex_lockfile(mutex: &ProcMutex) -> Result<String> {
-    let mut lockfile: *const i8 = ptr::null();
+    let mut lockfile: *const c_char = ptr::null();
 
     let status = unsafe { apr_sys::apr_proc_mutex_lockfile(mutex.raw, &mut lockfile) };
 
@@ -241,7 +242,7 @@ pub fn proc_mutex_lockfile(mutex: &ProcMutex) -> Result<String> {
 }
 
 pub fn proc_mutex_name(mutex: &ProcMutex) -> Result<String> {
-    let mut name: *const i8 = ptr::null();
+    let mut name: *const c_char = ptr::null();
 
     let status = unsafe { apr_sys::apr_proc_mutex_name(mutex.raw, &mut name) };
 
