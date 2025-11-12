@@ -117,7 +117,9 @@ impl<'pool> XmlDoc<'pool> {
     }
 
     /// Convert the document to a string representation.
-    pub fn to_string(&self, pool: &Pool<'_>, style: i32) -> Result<String, Error> {
+    ///
+    /// The returned string is allocated in the pool and borrows from it.
+    pub fn to_string<'a>(&self, pool: &'a Pool<'a>, style: i32) -> Result<&'a str, Error> {
         let mut buf_ptr: *const c_char = ptr::null();
 
         unsafe {
@@ -135,7 +137,11 @@ impl<'pool> XmlDoc<'pool> {
         if buf_ptr.is_null() {
             Err(Error::from_status(Status::from(apr_sys::APR_ENOMEM as i32)))
         } else {
-            unsafe { Ok(CStr::from_ptr(buf_ptr).to_string_lossy().into_owned()) }
+            unsafe {
+                Ok(CStr::from_ptr(buf_ptr)
+                    .to_str()
+                    .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?)
+            }
         }
     }
 }
@@ -270,12 +276,12 @@ impl<'pool> XmlAttr<'pool> {
     }
 }
 
-/// Parse an XML string and return the serialized result (pool-less API).
-pub fn parse(xml: &str) -> Result<String, Error> {
-    crate::pool::with_tmp_pool(|pool| {
-        let doc = parse_xml(xml, pool)?;
-        doc.to_string(pool, 0)
-    })
+/// Parse an XML string and return the serialized result.
+///
+/// The returned string is allocated in the pool and borrows from it.
+pub fn parse<'a>(xml: &str, pool: &'a Pool<'a>) -> Result<&'a str, Error> {
+    let doc = parse_xml(xml, pool)?;
+    doc.to_string(pool, 0)
 }
 
 /// Validate XML string (pool-less API).

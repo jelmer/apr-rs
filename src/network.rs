@@ -466,7 +466,9 @@ impl<'a> Drop for Socket<'a> {
 }
 
 /// Get the hostname of the local machine
-pub fn hostname_get(pool: &Pool<'_>) -> Result<String> {
+///
+/// The returned string is allocated in the pool and borrows from it.
+pub fn hostname_get<'a>(pool: &'a Pool<'a>) -> Result<&'a str> {
     let hostname_buf = unsafe { apr_sys::apr_palloc(pool.as_mut_ptr(), 256) as *mut c_char };
 
     if hostname_buf.is_null() {
@@ -479,7 +481,11 @@ pub fn hostname_get(pool: &Pool<'_>) -> Result<String> {
         return Err(crate::Error::from_status(status.into()));
     }
 
-    unsafe { Ok(CStr::from_ptr(hostname_buf).to_string_lossy().into_owned()) }
+    unsafe {
+        Ok(CStr::from_ptr(hostname_buf)
+            .to_str()
+            .map_err(|_| crate::Error::from_status(apr_sys::APR_EINVAL.into()))?)
+    }
 }
 
 #[cfg(test)]

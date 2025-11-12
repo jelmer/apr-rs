@@ -237,7 +237,7 @@ impl<'pool> Pool<'pool> {
         } else {
             Some(Pool {
                 raw: pool,
-                _no_send: std::marker::PhantomData,
+                _marker: std::marker::PhantomData,
             })
         }
     }
