@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 /// This handles platform-specific path encoding:
 /// - On Unix: paths are typically UTF-8 bytes
 /// - On Windows: converts from UTF-16 to the appropriate byte encoding
-pub fn path_to_cstring<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PoolString, Status> {
+pub fn path_to_cstring<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PoolString<'_>, Status> {
     let path = path.as_ref();
 
     #[cfg(unix)]

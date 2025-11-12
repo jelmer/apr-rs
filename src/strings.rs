@@ -46,7 +46,7 @@ impl<'a> BStr<'a> {
     }
 
     /// Convert to UTF-8 string with lossy conversion
-    pub fn to_string_lossy(&self) -> std::borrow::Cow<str> {
+    pub fn to_string_lossy(&self) -> std::borrow::Cow<'_, str> {
         String::from_utf8_lossy(self.data)
     }
 

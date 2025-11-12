@@ -345,7 +345,7 @@ impl<'a> Socket<'a> {
     }
 
     /// Receive data and sender address (for datagram sockets)
-    pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool) -> Result<(usize, SockAddr)> {
+    pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool) -> Result<(usize, SockAddr<'_>)> {
         let mut len = buf.len();
         let from_addr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
