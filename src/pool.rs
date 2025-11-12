@@ -2,6 +2,7 @@
 use apr_sys;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 /// A memory pool.
 #[derive(Debug)]
@@ -510,6 +511,147 @@ impl DerefMut for PoolHandle {
     }
 }
 
+/// A reference-counted shared pool.
+///
+/// This is a wrapper around `Rc<Pool>` that provides a convenient way to share
+/// a pool across multiple owners. The pool will be destroyed when the last
+/// reference is dropped.
+///
+/// # Use Cases
+///
+/// `SharedPool` is useful when:
+/// - Multiple components need to share the same pool
+/// - The pool's lifetime cannot be statically determined
+/// - You want automatic cleanup when all references are dropped
+///
+/// # Example
+///
+/// ```
+/// use apr::SharedPool;
+/// use apr::Pool;
+///
+/// let pool = SharedPool::new();
+/// let pool_clone = pool.clone();
+///
+/// // Both pool and pool_clone refer to the same underlying pool
+/// pool.tag("shared-pool");
+///
+/// // Pool is destroyed when both pool and pool_clone are dropped
+/// ```
+///
+/// # Note
+///
+/// Since `Pool` is not `Send` or `Sync`, `SharedPool` is also not `Send` or `Sync`.
+/// This means it can only be shared within a single thread. For multi-threaded
+/// scenarios, the pool must be created in each thread separately.
+#[derive(Debug, Clone)]
+pub struct SharedPool {
+    inner: Rc<Pool>,
+}
+
+impl SharedPool {
+    /// Create a new shared pool.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::SharedPool;
+    ///
+    /// let pool = SharedPool::new();
+    /// ```
+    pub fn new() -> Self {
+        SharedPool {
+            inner: Rc::new(Pool::new()),
+        }
+    }
+
+    /// Create a shared pool from an existing pool.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::{SharedPool, Pool};
+    ///
+    /// let pool = Pool::new();
+    /// let shared = SharedPool::from_pool(pool);
+    /// ```
+    pub fn from_pool(pool: Pool) -> Self {
+        SharedPool {
+            inner: Rc::new(pool),
+        }
+    }
+
+    /// Get the number of strong references to this pool.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::SharedPool;
+    ///
+    /// let pool = SharedPool::new();
+    /// assert_eq!(pool.strong_count(), 1);
+    ///
+    /// let pool2 = pool.clone();
+    /// assert_eq!(pool.strong_count(), 2);
+    /// ```
+    pub fn strong_count(&self) -> usize {
+        Rc::strong_count(&self.inner)
+    }
+
+    /// Get the raw pointer to the pool.
+    pub fn as_ptr(&self) -> *const apr_sys::apr_pool_t {
+        self.inner.as_ptr()
+    }
+
+    /// Get the raw mutable pointer to the pool.
+    pub fn as_mut_ptr(&self) -> *mut apr_sys::apr_pool_t {
+        self.inner.as_mut_ptr()
+    }
+}
+
+impl Default for SharedPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for SharedPool {
+    type Target = Pool;
+
+    /// Dereference to the underlying pool.
+    ///
+    /// This allows `SharedPool` to be used transparently as a `Pool`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::SharedPool;
+    ///
+    /// let pool = SharedPool::new();
+    /// // Can call Pool methods directly on the shared pool
+    /// pool.tag("shared-pool");
+    /// ```
+    fn deref(&self) -> &Pool {
+        &self.inner
+    }
+}
+
+impl From<Pool> for SharedPool {
+    /// Convert a pool into a shared pool.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::{SharedPool, Pool};
+    ///
+    /// let pool = Pool::new();
+    /// let shared: SharedPool = pool.into();
+    /// ```
+    fn from(pool: Pool) -> Self {
+        SharedPool::from_pool(pool)
+    }
+}
+
 /// Terminate the apr pool subsystem.
 ///
 /// # Safety
@@ -679,5 +821,128 @@ mod tests {
 
         // Original pool still valid
         long_lived_pool.tag("still-valid");
+    }
+
+    #[test]
+    fn test_shared_pool_basic() {
+        // Create a new shared pool
+        let pool = SharedPool::new();
+
+        // Verify initial reference count
+        assert_eq!(pool.strong_count(), 1);
+
+        // Test pointer access
+        assert!(!pool.as_ptr().is_null());
+        assert!(!pool.as_mut_ptr().is_null());
+
+        // Test that we can use Pool methods through Deref
+        pool.tag("shared-pool");
+    }
+
+    #[test]
+    fn test_shared_pool_clone() {
+        // Create a shared pool
+        let pool1 = SharedPool::new();
+        assert_eq!(pool1.strong_count(), 1);
+
+        // Clone it
+        let pool2 = pool1.clone();
+        assert_eq!(pool1.strong_count(), 2);
+        assert_eq!(pool2.strong_count(), 2);
+
+        // Both refer to the same underlying pool
+        assert_eq!(pool1.as_ptr(), pool2.as_ptr());
+
+        // Can use both independently
+        pool1.tag("shared-pool-1");
+        pool2.tag("shared-pool-2");
+
+        // Create another clone
+        let pool3 = pool2.clone();
+        assert_eq!(pool1.strong_count(), 3);
+        assert_eq!(pool2.strong_count(), 3);
+        assert_eq!(pool3.strong_count(), 3);
+
+        // Drop one reference
+        drop(pool3);
+        assert_eq!(pool1.strong_count(), 2);
+        assert_eq!(pool2.strong_count(), 2);
+    }
+
+    #[test]
+    fn test_shared_pool_from_pool() {
+        // Create a regular pool
+        let pool = Pool::new();
+        pool.tag("original");
+
+        // Convert to shared pool
+        let shared = SharedPool::from_pool(pool);
+        assert_eq!(shared.strong_count(), 1);
+
+        // Pool is destroyed when shared is dropped
+    }
+
+    #[test]
+    fn test_shared_pool_from_conversion() {
+        // Test From<Pool> trait
+        let pool = Pool::new();
+        let shared: SharedPool = pool.into();
+
+        assert_eq!(shared.strong_count(), 1);
+        shared.tag("converted");
+    }
+
+    #[test]
+    fn test_shared_pool_default() {
+        // Test Default trait
+        let pool = SharedPool::default();
+        assert_eq!(pool.strong_count(), 1);
+        pool.tag("default-pool");
+    }
+
+    #[test]
+    fn test_shared_pool_subpool() {
+        // Create a shared pool
+        let shared = SharedPool::new();
+        shared.tag("shared-parent");
+
+        // Create a subpool (through Deref)
+        let subpool = shared.subpool();
+        subpool.tag("subpool");
+
+        // Shared pool is the ancestor of the subpool
+        assert!(shared.is_ancestor(&subpool));
+        assert!(!subpool.is_ancestor(&*shared));
+    }
+
+    #[test]
+    fn test_shared_pool_multiple_owners() {
+        // Simulate multiple components sharing a pool
+        let pool = SharedPool::new();
+        pool.tag("shared");
+
+        let component1 = pool.clone();
+        let component2 = pool.clone();
+        let component3 = pool.clone();
+
+        assert_eq!(pool.strong_count(), 4);
+
+        // All components can use the pool
+        component1.pstrdup("component1");
+        component2.pstrdup("component2");
+        component3.pstrdup("component3");
+
+        // Drop components one by one
+        drop(component1);
+        assert_eq!(pool.strong_count(), 3);
+
+        drop(component2);
+        assert_eq!(pool.strong_count(), 2);
+
+        drop(component3);
+        assert_eq!(pool.strong_count(), 1);
+
+        // Pool is still valid
+        pool.pstrdup("still-valid");
     }
 }
