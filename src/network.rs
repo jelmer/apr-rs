@@ -345,7 +345,7 @@ impl<'a> Socket<'a> {
     }
 
     /// Receive data and sender address (for datagram sockets)
-    pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool<'_>) -> Result<(usize, SockAddr)> {
+    pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool<'_>) -> Result<(usize, SockAddr<'_>)> {
         let mut len = buf.len();
         let from_addr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
@@ -482,9 +482,9 @@ pub fn hostname_get<'a>(pool: &'a Pool<'a>) -> Result<&'a str> {
     }
 
     unsafe {
-        Ok(CStr::from_ptr(hostname_buf)
+        CStr::from_ptr(hostname_buf)
             .to_str()
-            .map_err(|_| crate::Error::from_status(apr_sys::APR_EINVAL.into()))?)
+            .map_err(|_| crate::Error::from_status(apr_sys::APR_EINVAL.into()))
     }
 }
 
