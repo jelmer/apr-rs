@@ -13,25 +13,25 @@ use std::ptr;
 /// Crypto driver/factory handle.
 pub struct CryptoDriver<'pool> {
     driver: *const apr_sys::apr_crypto_driver_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// Crypto context handle.
 pub struct Crypto<'pool> {
     factory: *mut apr_sys::apr_crypto_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// Encryption/decryption block handle.
 pub struct CryptoBlock<'pool> {
     block: *mut apr_sys::apr_crypto_block_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// Key for encryption/decryption.
 pub struct CryptoKey<'pool> {
     key: *mut apr_sys::apr_crypto_key_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// Block cipher mode.
@@ -120,7 +120,10 @@ pub fn decrypt_aes256(key: &[u8], data: &[u8], iv: Option<&[u8]>) -> Result<Vec<
 }
 
 /// Get a crypto driver by name (pool-exposed API).
-pub fn get_driver<'pool>(name: &str, pool: &'pool Pool) -> Result<CryptoDriver<'pool>, Error> {
+pub fn get_driver<'pool>(
+    name: &str,
+    pool: &'pool Pool<'pool>,
+) -> Result<CryptoDriver<'pool>, Error> {
     let name_cstr = CString::new(name)
         .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?;
 
@@ -150,7 +153,7 @@ pub fn get_driver<'pool>(name: &str, pool: &'pool Pool) -> Result<CryptoDriver<'
 
 impl Crypto<'_> {
     /// Initialize the crypto library (pool-exposed API).
-    pub fn init(pool: &Pool) -> Result<(), Error> {
+    pub fn init(pool: &Pool<'_>) -> Result<(), Error> {
         let status = unsafe { apr_sys::apr_crypto_init(pool.as_ptr() as *mut apr_sys::apr_pool_t) };
 
         if status == apr_sys::APR_SUCCESS as i32 {
@@ -163,7 +166,7 @@ impl Crypto<'_> {
 
 impl<'pool> CryptoDriver<'pool> {
     /// Create a crypto factory from this driver.
-    pub fn make_crypto(&self, pool: &'pool Pool) -> Result<Crypto<'pool>, Error> {
+    pub fn make_crypto(&self, pool: &'pool Pool<'pool>) -> Result<Crypto<'pool>, Error> {
         let mut factory: *mut apr_sys::apr_crypto_t = ptr::null_mut();
         let params_ptr: *const c_char = ptr::null();
 
@@ -194,7 +197,7 @@ impl<'pool> Crypto<'pool> {
         algorithm: BlockCipherAlgorithm,
         mode: BlockCipherMode,
         key_data: &[u8],
-        pool: &'pool Pool,
+        pool: &'pool Pool<'pool>,
     ) -> Result<CryptoKey<'pool>, Error> {
         let mut key: *mut apr_sys::apr_crypto_key_t = ptr::null_mut();
         let mut iv_size: apr_sys::apr_size_t = 0;
@@ -232,7 +235,7 @@ impl<'pool> Crypto<'pool> {
         key: &CryptoKey,
         plaintext: &[u8],
         iv: Option<&[u8]>,
-        pool: &Pool,
+        pool: &Pool<'_>,
     ) -> Result<Vec<u8>, Error> {
         let mut block: *mut apr_sys::apr_crypto_block_t = ptr::null_mut();
         let mut block_size: apr_sys::apr_size_t = 0;
@@ -309,7 +312,7 @@ impl<'pool> Crypto<'pool> {
         key: &CryptoKey,
         ciphertext: &[u8],
         iv: Option<&[u8]>,
-        pool: &Pool,
+        pool: &Pool<'_>,
     ) -> Result<Vec<u8>, Error> {
         let mut block: *mut apr_sys::apr_crypto_block_t = ptr::null_mut();
         let mut block_size: apr_sys::apr_size_t = 0;
@@ -375,7 +378,7 @@ impl<'pool> CryptoBlock<'pool> {
     pub fn encrypt_init(
         key: &CryptoKey,
         iv: Option<&[u8]>,
-        pool: &'pool Pool,
+        pool: &'pool Pool<'pool>,
     ) -> Result<Self, Error> {
         let mut block: *mut apr_sys::apr_crypto_block_t = ptr::null_mut();
         let mut block_size: apr_sys::apr_size_t = 0;
@@ -405,7 +408,7 @@ impl<'pool> CryptoBlock<'pool> {
     pub fn decrypt_init(
         key: &CryptoKey,
         iv: Option<&[u8]>,
-        pool: &'pool Pool,
+        pool: &'pool Pool<'pool>,
     ) -> Result<Self, Error> {
         let mut block: *mut apr_sys::apr_crypto_block_t = ptr::null_mut();
         let mut block_size: apr_sys::apr_size_t = 0;
@@ -524,7 +527,7 @@ impl<'pool> Drop for CryptoBlock<'pool> {
 }
 
 /// Get list of available crypto drivers.
-pub fn crypto_drivers(pool: &Pool) -> Vec<String> {
+pub fn crypto_drivers(pool: &Pool<'_>) -> Vec<String> {
     // Common driver names to try
     let drivers = ["openssl", "nss", "commoncrypto", "mscapi", "mscng"];
     let mut available = Vec::new();

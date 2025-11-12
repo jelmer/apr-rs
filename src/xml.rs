@@ -12,30 +12,30 @@ use std::ptr;
 /// XML parser handle.
 pub struct XmlParser<'pool> {
     parser: *mut apr_sys::apr_xml_parser,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// Parsed XML document.
 pub struct XmlDoc<'pool> {
     doc: *mut apr_sys::apr_xml_doc,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// XML element in a document.
 pub struct XmlElem<'pool> {
     elem: *const apr_sys::apr_xml_elem,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// XML attribute.
 pub struct XmlAttr<'pool> {
     attr: *const apr_sys::apr_xml_attr,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> XmlParser<'pool> {
     /// Create a new XML parser.
-    pub fn new(pool: &'pool Pool) -> Result<Self, Error> {
+    pub fn new(pool: &'pool Pool<'pool>) -> Result<Self, Error> {
         let parser =
             unsafe { apr_sys::apr_xml_parser_create(pool.as_ptr() as *mut apr_sys::apr_pool_t) };
 
@@ -117,7 +117,7 @@ impl<'pool> XmlDoc<'pool> {
     }
 
     /// Convert the document to a string representation.
-    pub fn to_string(&self, pool: &Pool, style: i32) -> Result<String, Error> {
+    pub fn to_string(&self, pool: &Pool<'_>, style: i32) -> Result<String, Error> {
         let mut buf_ptr: *const c_char = ptr::null();
 
         unsafe {
@@ -287,7 +287,7 @@ pub fn validate(xml: &str) -> Result<(), Error> {
 }
 
 /// Parse an XML string into a document (pool-exposed API).
-pub fn parse_xml<'pool>(xml: &str, pool: &'pool Pool) -> Result<XmlDoc<'pool>, Error> {
+pub fn parse_xml<'pool>(xml: &str, pool: &'pool Pool<'pool>) -> Result<XmlDoc<'pool>, Error> {
     let mut parser = XmlParser::new(pool)?;
     parser.feed(xml.as_bytes())?;
     parser.done()

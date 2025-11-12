@@ -12,14 +12,18 @@ use std::ptr;
 /// Character set translation handle.
 pub struct Xlate<'pool> {
     handle: *mut apr_sys::apr_xlate_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Xlate<'pool> {
     /// Create a new translation handle.
     ///
     /// Converts from `from_charset` to `to_charset`.
-    pub fn new(to_charset: &str, from_charset: &str, pool: &'pool Pool) -> Result<Self, Error> {
+    pub fn new(
+        to_charset: &str,
+        from_charset: &str,
+        pool: &'pool Pool<'pool>,
+    ) -> Result<Self, Error> {
         let to_cstr = CString::new(to_charset)
             .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?;
         let from_cstr = CString::new(from_charset)
@@ -143,7 +147,7 @@ pub fn xlate_conv_string(
     input: &str,
     from_charset: &str,
     to_charset: &str,
-    pool: &Pool,
+    pool: &Pool<'_>,
 ) -> Result<String, Error> {
     let xlate = Xlate::new(to_charset, from_charset, pool)?;
     xlate.convert_string(input)
@@ -154,7 +158,7 @@ pub fn xlate_conv_buffer(
     input: &[u8],
     from_charset: &str,
     to_charset: &str,
-    pool: &Pool,
+    pool: &Pool<'_>,
 ) -> Result<Vec<u8>, Error> {
     let xlate = Xlate::new(to_charset, from_charset, pool)?;
     xlate.convert_buffer(input)

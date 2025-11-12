@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BStr<'a> {
     data: &'a [u8],
-    _pool: PhantomData<&'a Pool>,
+    _pool: PhantomData<&'a Pool<'a>>,
 }
 
 impl<'a> BStr<'a> {
@@ -127,7 +127,7 @@ impl<'a> PartialEq<&[u8]> for BStr<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BStrUtf8<'a> {
     data: &'a str,
-    _pool: PhantomData<&'a Pool>,
+    _pool: PhantomData<&'a Pool<'a>>,
 }
 
 impl<'a> BStrUtf8<'a> {
@@ -231,7 +231,7 @@ impl<'a> PartialEq<String> for BStrUtf8<'a> {
 /// Safe wrapper for pool-allocated C strings
 pub struct PoolString<'a> {
     ptr: *const c_char,
-    _marker: PhantomData<&'a Pool>,
+    _marker: PhantomData<&'a Pool<'a>>,
 }
 
 impl<'a> PoolString<'a> {
@@ -301,7 +301,7 @@ pub fn pstrdup<'a>(s: &str, pool: &'a Pool) -> Result<PoolString<'a>, std::ffi::
 }
 
 /// Get raw pointer version (for advanced users)
-pub fn pstrdup_raw(s: &str, pool: &Pool) -> Result<*const c_char, std::ffi::NulError> {
+pub fn pstrdup_raw(s: &str, pool: &Pool<'_>) -> Result<*const c_char, std::ffi::NulError> {
     Ok(pstrdup(s, pool)?.as_ptr())
 }
 

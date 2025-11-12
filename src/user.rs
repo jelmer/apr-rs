@@ -9,13 +9,13 @@ use std::ptr;
 #[repr(transparent)]
 pub struct UserInfo<'a> {
     raw: *mut apr_sys::apr_uid_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 #[repr(transparent)]
 pub struct GroupInfo<'a> {
     raw: *mut apr_sys::apr_gid_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,7 +35,7 @@ pub struct Group {
     pub members: Vec<String>,
 }
 
-pub fn get_user_by_name(username: &str, pool: &Pool) -> Result<User> {
+pub fn get_user_by_name(username: &str, pool: &Pool<'_>) -> Result<User> {
     let c_username = CString::new(username)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
@@ -80,7 +80,7 @@ pub fn get_user_by_name(username: &str, pool: &Pool) -> Result<User> {
     })
 }
 
-pub fn get_user_by_id(uid: u32, pool: &Pool) -> Result<User> {
+pub fn get_user_by_id(uid: u32, pool: &Pool<'_>) -> Result<User> {
     let mut user_name: *mut c_char = ptr::null_mut();
     let mut apr_uid = uid as apr_sys::apr_uid_t;
 
@@ -108,7 +108,7 @@ pub fn get_user_by_id(uid: u32, pool: &Pool) -> Result<User> {
     })
 }
 
-pub fn get_group_by_name(groupname: &str, pool: &Pool) -> Result<Group> {
+pub fn get_group_by_name(groupname: &str, pool: &Pool<'_>) -> Result<Group> {
     let c_groupname = CString::new(groupname)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
@@ -129,7 +129,7 @@ pub fn get_group_by_name(groupname: &str, pool: &Pool) -> Result<Group> {
     })
 }
 
-pub fn get_group_by_id(gid: u32, pool: &Pool) -> Result<Group> {
+pub fn get_group_by_id(gid: u32, pool: &Pool<'_>) -> Result<Group> {
     let mut group_name: *mut c_char = ptr::null_mut();
     let mut apr_gid = gid as apr_sys::apr_gid_t;
 
@@ -162,7 +162,7 @@ pub fn get_current_group_id() -> u32 {
     unsafe { apr_sys::apr_gid_current() as u32 }
 }
 
-pub fn get_home_directory(pool: &Pool) -> Result<String> {
+pub fn get_home_directory(pool: &Pool<'_>) -> Result<String> {
     let mut homedir: *mut c_char = ptr::null_mut();
 
     let status = unsafe {
@@ -182,7 +182,7 @@ pub fn get_home_directory(pool: &Pool) -> Result<String> {
     }
 }
 
-pub fn get_user_home_directory(username: &str, pool: &Pool) -> Result<String> {
+pub fn get_user_home_directory(username: &str, pool: &Pool<'_>) -> Result<String> {
     let c_username = CString::new(username)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
