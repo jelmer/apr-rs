@@ -7,11 +7,11 @@ use std::ptr;
 #[repr(transparent)]
 pub struct Random<'a> {
     raw: *mut apr_sys::apr_random_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 impl<'a> Random<'a> {
-    pub fn new(pool: &'a Pool) -> Result<Self> {
+    pub fn new(pool: &'a Pool<'a>) -> Result<Self> {
         let mut random: *mut apr_sys::apr_random_t = ptr::null_mut();
 
         let status = unsafe { apr_sys::apr_random_init(&mut random, pool.as_mut_ptr()) };
@@ -106,7 +106,7 @@ impl<'a> Drop for Random<'a> {
 }
 
 /// Generate secure random bytes directly without creating a Random instance
-pub fn generate_secure_bytes(buf: &mut [u8], pool: &Pool) -> Result<()> {
+pub fn generate_secure_bytes(buf: &mut [u8], pool: &Pool<'_>) -> Result<()> {
     let mut random = Random::new(pool)?;
     
     // Add some basic entropy from system time
@@ -129,27 +129,27 @@ pub fn generate_secure_bytes(buf: &mut [u8], pool: &Pool) -> Result<()> {
 }
 
 /// Generate insecure (but fast) random bytes
-pub fn generate_insecure_bytes(buf: &mut [u8], pool: &Pool) -> Result<()> {
+pub fn generate_insecure_bytes(buf: &mut [u8], pool: &Pool<'_>) -> Result<()> {
     let mut random = Random::new(pool)?;
     random.insecure_bytes(buf)
 }
 
 /// Generate a random u32
-pub fn generate_u32(pool: &Pool) -> Result<u32> {
+pub fn generate_u32(pool: &Pool<'_>) -> Result<u32> {
     let mut buf = [0u8; 4];
     generate_secure_bytes(&mut buf, pool)?;
     Ok(u32::from_le_bytes(buf))
 }
 
 /// Generate a random u64
-pub fn generate_u64(pool: &Pool) -> Result<u64> {
+pub fn generate_u64(pool: &Pool<'_>) -> Result<u64> {
     let mut buf = [0u8; 8];
     generate_secure_bytes(&mut buf, pool)?;
     Ok(u64::from_le_bytes(buf))
 }
 
 /// Generate random bytes in a given range [0, max)
-pub fn generate_range(max: u32, pool: &Pool) -> Result<u32> {
+pub fn generate_range(max: u32, pool: &Pool<'_>) -> Result<u32> {
     if max == 0 {
         return Ok(0);
     }

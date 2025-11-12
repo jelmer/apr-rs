@@ -18,7 +18,7 @@ use std::ptr;
 /// Values are stored as raw pointers - the queue does not manage their lifetime.
 pub struct Queue<'pool> {
     ptr: *mut apr_sys::apr_queue_t,
-    _phantom: PhantomData<&'pool Pool>,
+    _phantom: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Queue<'pool> {
@@ -27,7 +27,7 @@ impl<'pool> Queue<'pool> {
     /// # Arguments
     /// * `capacity` - Maximum number of elements the queue can hold
     /// * `pool` - Memory pool for allocation
-    pub fn new(capacity: u32, pool: &'pool Pool) -> Result<Self> {
+    pub fn new(capacity: u32, pool: &'pool Pool<'pool>) -> Result<Self> {
         let mut queue_ptr: *mut apr_sys::apr_queue_t = ptr::null_mut();
 
         let status =

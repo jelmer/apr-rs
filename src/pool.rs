@@ -5,12 +5,16 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 /// A memory pool.
+///
+/// The lifetime parameter `'pool` ensures that subpools cannot outlive their parent pool.
+/// Root pools (created with `Pool::new()`) have a `'static` lifetime.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Pool {
+pub struct Pool<'pool> {
     raw: *mut apr_sys::apr_pool_t,
     // Pools are not Send or Sync - they are single-threaded
-    _no_send: std::marker::PhantomData<*mut ()>,
+    // Lifetime ensures subpools don't outlive parent
+    _marker: std::marker::PhantomData<&'pool ()>,
 }
 
 #[cfg(feature = "pool-debug")]
@@ -27,14 +31,16 @@ macro_rules! pool_debug {
     };
 }
 
-impl Default for Pool {
+impl Default for Pool<'static> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Pool {
-    /// Create a new pool.
+impl Pool<'static> {
+    /// Create a new root pool.
+    ///
+    /// Root pools have a `'static` lifetime since they have no parent.
     pub fn new() -> Self {
         let mut pool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
         unsafe {
@@ -47,12 +53,12 @@ impl Pool {
         }
         Pool {
             raw: pool,
-            _no_send: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 
     #[cfg(feature = "pool-debug")]
-    /// Create a new pool with debug information.
+    /// Create a new root pool with debug information.
     ///
     /// This is used for debugging memory pool issues and tracking where pools are created.
     pub fn new_debug(location: &str) -> Self {
@@ -68,15 +74,22 @@ impl Pool {
         }
         Pool {
             raw: pool,
-            _no_send: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
+}
 
+impl<'pool> Pool<'pool> {
     /// Create a pool from a raw pointer.
-    pub fn from_raw(ptr: *mut apr_sys::apr_pool_t) -> Self {
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the pointer is valid and the lifetime is appropriate.
+    /// For pools passed from C callbacks, consider using `PoolHandle::from_borrowed_raw` instead.
+    pub unsafe fn from_raw(ptr: *mut apr_sys::apr_pool_t) -> Self {
         Pool {
             raw: ptr,
-            _no_send: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -91,19 +104,22 @@ impl Pool {
     }
 
     /// Create a subpool.
-    pub fn subpool(&self) -> Self {
+    ///
+    /// The returned pool's lifetime is bounded by this pool, ensuring the subpool
+    /// cannot outlive its parent.
+    pub fn subpool(&self) -> Pool<'_> {
         let mut subpool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
         unsafe {
             apr_sys::apr_pool_create_ex(&mut subpool, self.raw, None, std::ptr::null_mut());
         }
         Pool {
             raw: subpool,
-            _no_send: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 
     /// Create a subpool, run a function with it, then destroy the subpool.
-    pub fn with_child<R>(&self, f: impl FnOnce(&Pool) -> R) -> R {
+    pub fn with_child<R>(&self, f: impl FnOnce(&Pool<'_>) -> R) -> R {
         let child = self.subpool();
         f(&child)
     }
@@ -127,7 +143,7 @@ impl Pool {
     }
 
     /// Check if the pool is an ancestor of another pool.
-    pub fn is_ancestor(&self, other: &Pool) -> bool {
+    pub fn is_ancestor(&self, other: &Pool<'_>) -> bool {
         unsafe { apr_sys::apr_pool_is_ancestor(self.raw, other.raw) != 0 }
     }
 
@@ -196,7 +212,7 @@ impl Pool {
 
     /// Try to join two pools.
     #[cfg(feature = "pool-debug")]
-    pub fn join(&self, other: &Pool) {
+    pub fn join(&self, other: &Pool<'_>) {
         unsafe { apr_sys::apr_pool_join(self.raw, other.raw) }
     }
 
@@ -221,17 +237,17 @@ impl Pool {
         } else {
             Some(Pool {
                 raw: pool,
-                _no_send: std::marker::PhantomData,
+                _marker: std::marker::PhantomData,
             })
         }
     }
 
     /// Try to join two pools.
     #[cfg(not(feature = "pool-debug"))]
-    pub fn join(&self, _other: &Pool) {}
+    pub fn join(&self, _other: &Pool<'_>) {}
 }
 
-impl Drop for Pool {
+impl Drop for Pool<'_> {
     fn drop(&mut self) {
         unsafe {
             apr_sys::apr_pool_destroy(self.raw);
@@ -282,7 +298,7 @@ impl Drop for Allocator {
 /// Create a temporary pool, run a function with it, then destroy the pool.
 ///
 /// This is useful for short-lived operations that need a pool for temporary allocations.
-pub fn with_tmp_pool<R>(f: impl FnOnce(&Pool) -> R) -> R {
+pub fn with_tmp_pool<R>(f: impl FnOnce(&Pool<'_>) -> R) -> R {
     let tmp_pool = Pool::new();
     f(&tmp_pool)
 }
@@ -326,15 +342,15 @@ pub fn with_tmp_pool<R>(f: impl FnOnce(&Pool) -> R) -> R {
 /// because pools cannot be cloned. APR only supports creating subpools, not
 /// copying pool contents.
 #[derive(Debug)]
-pub enum PoolHandle {
+pub enum PoolHandle<'pool> {
     /// An owned pool that will be destroyed when dropped.
-    Owned(Pool),
+    Owned(Pool<'pool>),
     /// A borrowed pool that will NOT be destroyed when dropped.
     /// The pool is owned by the caller (typically a C library).
-    Borrowed(ManuallyDrop<Pool>),
+    Borrowed(ManuallyDrop<Pool<'pool>>),
 }
 
-impl PoolHandle {
+impl<'pool> PoolHandle<'pool> {
     /// Create a handle to an owned pool.
     ///
     /// The pool will be destroyed when the handle is dropped.
@@ -349,7 +365,7 @@ impl PoolHandle {
     /// let handle = PoolHandle::owned(pool);
     /// // handle will destroy the pool when dropped
     /// ```
-    pub fn owned(pool: Pool) -> Self {
+    pub fn owned(pool: Pool<'pool>) -> Self {
         PoolHandle::Owned(pool)
     }
 
@@ -407,7 +423,7 @@ impl PoolHandle {
     /// let subpool = handle.subpool();
     /// // subpool is owned and will be destroyed when dropped
     /// ```
-    pub fn subpool(&self) -> Pool {
+    pub fn subpool(&self) -> Pool<'static> {
         let mut subpool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
         unsafe {
             apr_sys::apr_pool_create_ex(
@@ -416,8 +432,8 @@ impl PoolHandle {
                 None,
                 std::ptr::null_mut(),
             );
+            Pool::from_raw(subpool)
         }
-        Pool::from_raw(subpool)
     }
 
     /// Returns true if this handle owns the pool.
@@ -451,14 +467,14 @@ impl PoolHandle {
     }
 }
 
-impl Drop for PoolHandle {
+impl Drop for PoolHandle<'_> {
     fn drop(&mut self) {
         // Only Owned variant destroys the pool (via Pool's Drop)
         // Borrowed variant does nothing (ManuallyDrop prevents Pool::drop)
     }
 }
 
-impl From<Pool> for PoolHandle {
+impl<'pool> From<Pool<'pool>> for PoolHandle<'pool> {
     /// Convert an owned pool into a pool handle.
     ///
     /// # Example
@@ -470,13 +486,13 @@ impl From<Pool> for PoolHandle {
     /// let pool = Pool::new();
     /// let handle: PoolHandle = pool.into();
     /// ```
-    fn from(pool: Pool) -> Self {
+    fn from(pool: Pool<'pool>) -> Self {
         PoolHandle::Owned(pool)
     }
 }
 
-impl Deref for PoolHandle {
-    type Target = Pool;
+impl<'pool> Deref for PoolHandle<'pool> {
+    type Target = Pool<'pool>;
 
     /// Dereference to the underlying pool.
     ///
@@ -493,7 +509,7 @@ impl Deref for PoolHandle {
     /// // Can call Pool methods directly on the handle
     /// handle.tag("my-pool");
     /// ```
-    fn deref(&self) -> &Pool {
+    fn deref(&self) -> &Pool<'pool> {
         match self {
             PoolHandle::Owned(pool) => pool,
             PoolHandle::Borrowed(pool) => pool,
@@ -501,9 +517,9 @@ impl Deref for PoolHandle {
     }
 }
 
-impl DerefMut for PoolHandle {
+impl<'pool> DerefMut for PoolHandle<'pool> {
     /// Mutably dereference to the underlying pool.
-    fn deref_mut(&mut self) -> &mut Pool {
+    fn deref_mut(&mut self) -> &mut Pool<'pool> {
         match self {
             PoolHandle::Owned(pool) => pool,
             PoolHandle::Borrowed(pool) => pool,
@@ -545,11 +561,11 @@ impl DerefMut for PoolHandle {
 /// This means it can only be shared within a single thread. For multi-threaded
 /// scenarios, the pool must be created in each thread separately.
 #[derive(Debug, Clone)]
-pub struct SharedPool {
-    inner: Rc<Pool>,
+pub struct SharedPool<'pool> {
+    inner: Rc<Pool<'pool>>,
 }
 
-impl SharedPool {
+impl<'pool> SharedPool<'pool> {
     /// Create a new shared pool.
     ///
     /// # Example
@@ -559,7 +575,7 @@ impl SharedPool {
     ///
     /// let pool = SharedPool::new();
     /// ```
-    pub fn new() -> Self {
+    pub fn new() -> SharedPool<'static> {
         SharedPool {
             inner: Rc::new(Pool::new()),
         }
@@ -575,7 +591,7 @@ impl SharedPool {
     /// let pool = Pool::new();
     /// let shared = SharedPool::from_pool(pool);
     /// ```
-    pub fn from_pool(pool: Pool) -> Self {
+    pub fn from_pool(pool: Pool<'pool>) -> Self {
         SharedPool {
             inner: Rc::new(pool),
         }
@@ -609,14 +625,14 @@ impl SharedPool {
     }
 }
 
-impl Default for SharedPool {
+impl Default for SharedPool<'static> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Deref for SharedPool {
-    type Target = Pool;
+impl<'pool> Deref for SharedPool<'pool> {
+    type Target = Pool<'pool>;
 
     /// Dereference to the underlying pool.
     ///
@@ -631,12 +647,12 @@ impl Deref for SharedPool {
     /// // Can call Pool methods directly on the shared pool
     /// pool.tag("shared-pool");
     /// ```
-    fn deref(&self) -> &Pool {
+    fn deref(&self) -> &Pool<'pool> {
         &self.inner
     }
 }
 
-impl From<Pool> for SharedPool {
+impl<'pool> From<Pool<'pool>> for SharedPool<'pool> {
     /// Convert a pool into a shared pool.
     ///
     /// # Example
@@ -647,7 +663,7 @@ impl From<Pool> for SharedPool {
     /// let pool = Pool::new();
     /// let shared: SharedPool = pool.into();
     /// ```
-    fn from(pool: Pool) -> Self {
+    fn from(pool: Pool<'pool>) -> Self {
         SharedPool::from_pool(pool)
     }
 }

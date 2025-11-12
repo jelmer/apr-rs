@@ -9,7 +9,7 @@ use std::slice;
 pub struct Mmap<'a> {
     raw: *mut apr_sys::apr_mmap_t,
     offset: i64,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 /// Memory map access flags

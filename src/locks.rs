@@ -10,13 +10,13 @@ use std::ptr;
 #[repr(transparent)]
 pub struct ProcMutex<'a> {
     raw: *mut apr_sys::apr_proc_mutex_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 #[repr(transparent)]
 pub struct GlobalMutex<'a> {
     raw: *mut apr_sys::apr_global_mutex_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +43,7 @@ impl From<LockMech> for apr_sys::apr_lockmech_e {
 }
 
 impl<'a> ProcMutex<'a> {
-    pub fn new(fname: Option<&Path>, mech: LockMech, pool: &'a Pool) -> Result<Self> {
+    pub fn new(fname: Option<&Path>, mech: LockMech, pool: &'a Pool<'a>) -> Result<Self> {
         let mut mutex: *mut apr_sys::apr_proc_mutex_t = ptr::null_mut();
 
         let c_fname = if let Some(path) = fname {
@@ -120,7 +120,7 @@ impl<'a> Drop for ProcMutex<'a> {
 }
 
 impl<'a> GlobalMutex<'a> {
-    pub fn new(fname: Option<&Path>, mech: LockMech, pool: &'a Pool) -> Result<Self> {
+    pub fn new(fname: Option<&Path>, mech: LockMech, pool: &'a Pool<'a>) -> Result<Self> {
         let mut mutex: *mut apr_sys::apr_global_mutex_t = ptr::null_mut();
 
         let c_fname = if let Some(path) = fname {
@@ -151,7 +151,7 @@ impl<'a> GlobalMutex<'a> {
         })
     }
 
-    pub fn child_init(&mut self, fname: Option<&Path>, pool: &Pool) -> Result<()> {
+    pub fn child_init(&mut self, fname: Option<&Path>, pool: &Pool<'_>) -> Result<()> {
         let c_fname = if let Some(path) = fname {
             let path_str = path
                 .to_str()

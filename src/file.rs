@@ -63,7 +63,7 @@ impl File {
         path: P,
         flags: OpenFlags,
         perms: FilePerms,
-        pool: &Pool,
+        pool: &Pool<'_>,
     ) -> Result<Self, Status> {
         let path_str = path.as_ref().to_string_lossy();
         let path_cstr = std::ffi::CString::new(path_str.as_ref())
@@ -93,7 +93,7 @@ impl File {
     /// Create a temporary file
     ///
     /// The temporary file will have secure default permissions (typically 0600).
-    pub fn temp_file(template: &str, flags: OpenFlags, pool: &Pool) -> Result<Self, Status> {
+    pub fn temp_file(template: &str, flags: OpenFlags, pool: &Pool<'_>) -> Result<Self, Status> {
         let template_cstr = std::ffi::CString::new(template)
             .map_err(|_| Status::from(apr_sys::APR_EINVAL as i32))?;
 
@@ -118,7 +118,7 @@ impl File {
     }
 
     /// Get a reference to stdin
-    pub fn stdin(pool: &Pool) -> Result<Self, Status> {
+    pub fn stdin(pool: &Pool<'_>) -> Result<Self, Status> {
         let mut file_ptr: *mut apr_sys::apr_file_t = std::ptr::null_mut();
         let status = unsafe { apr_sys::apr_file_open_stdin(&mut file_ptr, pool.as_mut_ptr()) };
 
@@ -133,7 +133,7 @@ impl File {
     }
 
     /// Get a reference to stdout
-    pub fn stdout(pool: &Pool) -> Result<Self, Status> {
+    pub fn stdout(pool: &Pool<'_>) -> Result<Self, Status> {
         let mut file_ptr: *mut apr_sys::apr_file_t = std::ptr::null_mut();
         let status = unsafe { apr_sys::apr_file_open_stdout(&mut file_ptr, pool.as_mut_ptr()) };
 
@@ -148,7 +148,7 @@ impl File {
     }
 
     /// Get a reference to stderr
-    pub fn stderr(pool: &Pool) -> Result<Self, Status> {
+    pub fn stderr(pool: &Pool<'_>) -> Result<Self, Status> {
         let mut file_ptr: *mut apr_sys::apr_file_t = std::ptr::null_mut();
         let status = unsafe { apr_sys::apr_file_open_stderr(&mut file_ptr, pool.as_mut_ptr()) };
 
@@ -261,7 +261,7 @@ impl Write for File {
 pub struct FileBuilder<'a> {
     flags: OpenFlags,
     perms: FilePerms,
-    pool: Option<&'a Pool>,
+    pool: Option<&'a Pool<'a>>,
 }
 
 impl<'a> FileBuilder<'a> {

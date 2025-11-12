@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 /// Arrays store fixed-size elements contiguously in memory.
 pub struct Array<'pool> {
     ptr: *mut apr_array_header_t,
-    _phantom: PhantomData<&'pool Pool>,
+    _phantom: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Array<'pool> {
@@ -24,7 +24,7 @@ impl<'pool> Array<'pool> {
     /// * `pool` - Memory pool for allocation
     /// * `nelts` - Initial number of elements to allocate
     /// * `elt_size` - Size of each element in bytes
-    pub fn new(pool: &'pool Pool, nelts: i32, elt_size: i32) -> Self {
+    pub fn new(pool: &'pool Pool<'pool>, nelts: i32, elt_size: i32) -> Self {
         let ptr = unsafe { apr_sys::apr_array_make(pool.as_mut_ptr(), nelts, elt_size) };
         Self {
             ptr,
@@ -107,7 +107,7 @@ pub struct TypedArray<'pool, T: Copy> {
 
 impl<'pool, T: Copy> TypedArray<'pool, T> {
     /// Create a new typed array.
-    pub fn new(pool: &'pool Pool, initial_size: i32) -> Self {
+    pub fn new(pool: &'pool Pool<'pool>, initial_size: i32) -> Self {
         Self {
             inner: Array::new(pool, initial_size, std::mem::size_of::<T>() as i32),
             _phantom: PhantomData,
@@ -212,7 +212,7 @@ impl<'a, 'pool, T: Copy> Iterator for TypedArrayIter<'a, 'pool, T> {
 
 impl<'pool, T: Copy> TypedArray<'pool, T> {
     /// Create a typed array from an iterator of values.
-    pub fn from_iter<I>(pool: &'pool Pool, iter: I) -> Self
+    pub fn from_iter<I>(pool: &'pool Pool<'pool>, iter: I) -> Self
     where
         I: IntoIterator<Item = T>,
         I::IntoIter: ExactSizeIterator,
@@ -241,12 +241,12 @@ impl<'pool, T: Copy> Extend<T> for TypedArray<'pool, T> {
 /// Tables are case-insensitive for keys and can have multiple values per key.
 pub struct Table<'pool> {
     ptr: *mut apr_table_t,
-    _phantom: PhantomData<&'pool Pool>,
+    _phantom: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Table<'pool> {
     /// Create a new table.
-    pub fn new(pool: &'pool Pool, nelts: i32) -> Self {
+    pub fn new(pool: &'pool Pool<'pool>, nelts: i32) -> Self {
         let ptr = unsafe { apr_sys::apr_table_make(pool.as_mut_ptr(), nelts) };
         Self {
             ptr,

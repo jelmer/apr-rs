@@ -12,12 +12,12 @@ use std::marker::PhantomData;
 /// Values are raw pointers that the hash table does not manage.
 pub struct Hash<'pool> {
     ptr: *mut apr_hash_t,
-    _phantom: PhantomData<&'pool ()>,
+    _phantom: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Hash<'pool> {
     /// Create a new hash table in the given pool.
-    pub fn new(pool: &'pool Pool) -> Self {
+    pub fn new(pool: &'pool Pool<'pool>) -> Self {
         Self {
             ptr: unsafe { apr_sys::apr_hash_make(pool.as_mut_ptr()) },
             _phantom: PhantomData,

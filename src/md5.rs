@@ -10,12 +10,12 @@ use std::mem::MaybeUninit;
 /// MD5 context for incremental hashing.
 pub struct Md5Context<'pool> {
     ctx: apr_sys::apr_md5_ctx_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Md5Context<'pool> {
     /// Create a new MD5 context.
-    pub fn new(_pool: &'pool Pool) -> Result<Self, Error> {
+    pub fn new(_pool: &'pool Pool<'pool>) -> Result<Self, Error> {
         let mut ctx = MaybeUninit::uninit();
         let status = unsafe { apr_sys::apr_md5_init(ctx.as_mut_ptr()) };
 
@@ -70,14 +70,14 @@ pub fn hash_hex(data: &[u8]) -> Result<String, Error> {
 }
 
 /// Compute the MD5 digest of data in one shot (pool-exposed API).
-pub fn md5(data: &[u8], pool: &Pool) -> Result<[u8; APR_MD5_DIGESTSIZE], Error> {
+pub fn md5(data: &[u8], pool: &Pool<'_>) -> Result<[u8; APR_MD5_DIGESTSIZE], Error> {
     let mut ctx = Md5Context::new(pool)?;
     ctx.update(data)?;
     Ok(ctx.finalize())
 }
 
 /// Encode data as an MD5 hash in hex format (pool-exposed API).
-pub fn md5_encode(data: &[u8], pool: &Pool) -> Result<String, Error> {
+pub fn md5_encode(data: &[u8], pool: &Pool<'_>) -> Result<String, Error> {
     let digest = md5(data, pool)?;
     let mut result = String::with_capacity(APR_MD5_DIGESTSIZE * 2);
     for byte in digest.iter() {

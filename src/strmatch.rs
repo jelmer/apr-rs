@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 /// A precompiled string pattern for efficient matching.
 pub struct StrMatch<'pool> {
     pattern: *const apr_sys::apr_strmatch_pattern,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> StrMatch<'pool> {
@@ -18,7 +18,7 @@ impl<'pool> StrMatch<'pool> {
     ///
     /// The pattern is compiled using an optimized algorithm (typically Boyer-Moore)
     /// for fast searching.
-    pub fn new(pattern: &str, pool: &'pool Pool) -> Result<Self, crate::Error> {
+    pub fn new(pattern: &str, pool: &'pool Pool<'pool>) -> Result<Self, crate::Error> {
         // Allocate the pattern string in the pool to ensure it lives as long as needed
         let c_pattern = pool.pstrdup(pattern);
 
@@ -43,7 +43,10 @@ impl<'pool> StrMatch<'pool> {
     }
 
     /// Precompile a case-insensitive pattern for efficient string matching.
-    pub fn new_case_insensitive(pattern: &str, pool: &'pool Pool) -> Result<Self, crate::Error> {
+    pub fn new_case_insensitive(
+        pattern: &str,
+        pool: &'pool Pool<'pool>,
+    ) -> Result<Self, crate::Error> {
         // Allocate the pattern string in the pool to ensure it lives as long as needed
         let c_pattern = pool.pstrdup(pattern);
 
