@@ -1,5 +1,7 @@
 //! Memory pool management.
 use apr_sys;
+use std::mem::ManuallyDrop;
+use std::ops::{Deref, DerefMut};
 
 /// A memory pool.
 #[derive(Debug)]
@@ -284,6 +286,230 @@ pub fn with_tmp_pool<R>(f: impl FnOnce(&Pool) -> R) -> R {
     f(&tmp_pool)
 }
 
+/// A pool that may be owned or borrowed.
+///
+/// This is similar to `Cow` but for APR pools, which cannot be cloned.
+/// When borrowed, the pool is not destroyed on drop.
+///
+/// # Use Cases
+///
+/// ## C Library Callbacks
+///
+/// When C libraries call Rust callbacks and pass pool pointers, the C library
+/// typically owns the pool. Using `PoolHandle::from_borrowed_raw()` prevents
+/// the pool from being destroyed when the Rust wrapper goes out of scope:
+///
+/// ```ignore
+/// extern "C" fn callback(pool: *mut apr_pool_t) -> *mut svn_error_t {
+///     // Safe: Borrowed pool won't be destroyed
+///     let pool = unsafe { PoolHandle::from_borrowed_raw(pool) };
+///     // ... use pool ...
+///     std::ptr::null_mut()
+/// }  // pool handle dropped, but C library's pool is NOT destroyed
+/// ```
+///
+/// ## Flexible Pool Ownership
+///
+/// Structs can use `PoolHandle` to support both owned and borrowed pools:
+///
+/// ```ignore
+/// pub struct SslServerCertInfo {
+///     ptr: *const svn_auth_ssl_server_cert_info_t,
+///     pool: PoolHandle,  // Can be owned OR borrowed
+/// }
+/// ```
+///
+/// # Why Not Use `Cow`?
+///
+/// Standard library's `Cow` requires `ToOwned`, but `Pool` cannot implement it
+/// because pools cannot be cloned. APR only supports creating subpools, not
+/// copying pool contents.
+#[derive(Debug)]
+pub enum PoolHandle {
+    /// An owned pool that will be destroyed when dropped.
+    Owned(Pool),
+    /// A borrowed pool that will NOT be destroyed when dropped.
+    /// The pool is owned by the caller (typically a C library).
+    Borrowed(ManuallyDrop<Pool>),
+}
+
+impl PoolHandle {
+    /// Create a handle to an owned pool.
+    ///
+    /// The pool will be destroyed when the handle is dropped.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::Pool;
+    ///
+    /// let pool = Pool::new();
+    /// let handle = PoolHandle::owned(pool);
+    /// // handle will destroy the pool when dropped
+    /// ```
+    pub fn owned(pool: Pool) -> Self {
+        PoolHandle::Owned(pool)
+    }
+
+    /// Create a handle to a borrowed pool from a raw pointer.
+    ///
+    /// The pool will NOT be destroyed when the handle is dropped.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure:
+    /// - `ptr` is a valid pool pointer
+    /// - The pool remains valid for the lifetime of this handle
+    /// - The pool is owned and will be destroyed by the caller
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // In a C callback that receives a pool pointer
+    /// let handle = unsafe { PoolHandle::from_borrowed_raw(c_pool_ptr) };
+    /// // Use the pool without worrying about destroying it
+    /// ```
+    pub unsafe fn from_borrowed_raw(ptr: *mut apr_sys::apr_pool_t) -> Self {
+        PoolHandle::Borrowed(ManuallyDrop::new(Pool::from_raw(ptr)))
+    }
+
+    /// Get the raw pointer to the pool.
+    pub fn as_ptr(&self) -> *const apr_sys::apr_pool_t {
+        match self {
+            PoolHandle::Owned(pool) => pool.as_ptr(),
+            PoolHandle::Borrowed(pool) => pool.as_ptr(),
+        }
+    }
+
+    /// Get the raw mutable pointer to the pool.
+    pub fn as_mut_ptr(&self) -> *mut apr_sys::apr_pool_t {
+        match self {
+            PoolHandle::Owned(pool) => pool.as_mut_ptr(),
+            PoolHandle::Borrowed(pool) => pool.as_mut_ptr(),
+        }
+    }
+
+    /// Create a subpool.
+    ///
+    /// The returned pool is always owned and will be destroyed on drop,
+    /// regardless of whether the parent handle is owned or borrowed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::Pool;
+    ///
+    /// let pool = Pool::new();
+    /// let handle = PoolHandle::owned(pool);
+    /// let subpool = handle.subpool();
+    /// // subpool is owned and will be destroyed when dropped
+    /// ```
+    pub fn subpool(&self) -> Pool {
+        let mut subpool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
+        unsafe {
+            apr_sys::apr_pool_create_ex(
+                &mut subpool,
+                self.as_mut_ptr(),
+                None,
+                std::ptr::null_mut(),
+            );
+        }
+        Pool::from_raw(subpool)
+    }
+
+    /// Returns true if this handle owns the pool.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::Pool;
+    ///
+    /// let pool = Pool::new();
+    /// let handle = PoolHandle::owned(pool);
+    /// assert!(handle.is_owned());
+    /// assert!(!handle.is_borrowed());
+    /// ```
+    pub fn is_owned(&self) -> bool {
+        matches!(self, PoolHandle::Owned(_))
+    }
+
+    /// Returns true if this handle borrows the pool.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let handle = unsafe { PoolHandle::from_borrowed_raw(c_pool_ptr) };
+    /// assert!(handle.is_borrowed());
+    /// assert!(!handle.is_owned());
+    /// ```
+    pub fn is_borrowed(&self) -> bool {
+        matches!(self, PoolHandle::Borrowed(_))
+    }
+}
+
+impl Drop for PoolHandle {
+    fn drop(&mut self) {
+        // Only Owned variant destroys the pool (via Pool's Drop)
+        // Borrowed variant does nothing (ManuallyDrop prevents Pool::drop)
+    }
+}
+
+impl From<Pool> for PoolHandle {
+    /// Convert an owned pool into a pool handle.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::Pool;
+    ///
+    /// let pool = Pool::new();
+    /// let handle: PoolHandle = pool.into();
+    /// ```
+    fn from(pool: Pool) -> Self {
+        PoolHandle::Owned(pool)
+    }
+}
+
+impl Deref for PoolHandle {
+    type Target = Pool;
+
+    /// Dereference to the underlying pool.
+    ///
+    /// This allows `PoolHandle` to be used transparently as a `Pool`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::Pool;
+    ///
+    /// let pool = Pool::new();
+    /// let handle = PoolHandle::owned(pool);
+    /// // Can call Pool methods directly on the handle
+    /// handle.tag("my-pool");
+    /// ```
+    fn deref(&self) -> &Pool {
+        match self {
+            PoolHandle::Owned(pool) => pool,
+            PoolHandle::Borrowed(pool) => pool,
+        }
+    }
+}
+
+impl DerefMut for PoolHandle {
+    /// Mutably dereference to the underlying pool.
+    fn deref_mut(&mut self) -> &mut Pool {
+        match self {
+            PoolHandle::Owned(pool) => pool,
+            PoolHandle::Borrowed(pool) => pool,
+        }
+    }
+}
+
 /// Terminate the apr pool subsystem.
 ///
 /// # Safety
@@ -311,5 +537,147 @@ mod tests {
         assert!(subpool.parent().unwrap().is_ancestor(&subpool));
         subpool.tag("subpool");
         pool.tag("pool");
+    }
+
+    #[test]
+    fn test_pool_handle_owned() {
+        // Create an owned pool handle
+        let pool = Pool::new();
+        let handle = PoolHandle::owned(pool);
+
+        // Verify it's owned
+        assert!(handle.is_owned());
+        assert!(!handle.is_borrowed());
+
+        // Test pointer access
+        assert!(!handle.as_ptr().is_null());
+        assert!(!handle.as_mut_ptr().is_null());
+
+        // Test that we can use Pool methods through Deref
+        handle.tag("owned-pool");
+
+        // Pool will be destroyed when handle is dropped
+    }
+
+    #[test]
+    fn test_pool_handle_borrowed() {
+        // Create a real pool that we'll keep alive
+        let pool = Pool::new();
+        let pool_ptr = pool.as_mut_ptr();
+
+        // Create a borrowed handle from the raw pointer
+        let handle = unsafe { PoolHandle::from_borrowed_raw(pool_ptr) };
+
+        // Verify it's borrowed
+        assert!(handle.is_borrowed());
+        assert!(!handle.is_owned());
+
+        // Test pointer access
+        assert_eq!(handle.as_ptr(), pool_ptr);
+        assert_eq!(handle.as_mut_ptr(), pool_ptr);
+
+        // Test that we can use Pool methods through Deref
+        handle.tag("borrowed-pool");
+
+        // Drop the borrowed handle - should NOT destroy the pool
+        drop(handle);
+
+        // Pool is still valid and can be used
+        pool.tag("still-valid");
+
+        // Pool will be destroyed when the original pool is dropped
+    }
+
+    #[test]
+    fn test_pool_handle_subpool() {
+        // Test subpool creation from owned handle
+        let pool = Pool::new();
+        let handle = PoolHandle::owned(pool);
+        let subpool = handle.subpool();
+
+        // Verify the subpool is valid and is a child of the handle's pool
+        subpool.tag("subpool");
+
+        // Test subpool creation from borrowed handle
+        let pool2 = Pool::new();
+        let pool2_ptr = pool2.as_mut_ptr();
+        let borrowed_handle = unsafe { PoolHandle::from_borrowed_raw(pool2_ptr) };
+        let subpool2 = borrowed_handle.subpool();
+
+        subpool2.tag("subpool2");
+    }
+
+    #[test]
+    fn test_pool_handle_from_pool() {
+        // Test From<Pool> conversion
+        let pool = Pool::new();
+        let handle: PoolHandle = pool.into();
+
+        assert!(handle.is_owned());
+        assert!(!handle.is_borrowed());
+    }
+
+    #[test]
+    fn test_pool_handle_deref() {
+        // Test that we can call Pool methods directly on PoolHandle
+        let pool = Pool::new();
+        let handle = PoolHandle::owned(pool);
+
+        // These should all work through Deref/DerefMut
+        handle.tag("test-deref");
+        let _subpool = handle.subpool();
+        let _parent = handle.parent();
+
+        // Test with borrowed handle
+        let pool2 = Pool::new();
+        let pool2_ptr = pool2.as_mut_ptr();
+        let borrowed_handle = unsafe { PoolHandle::from_borrowed_raw(pool2_ptr) };
+
+        borrowed_handle.tag("test-deref-borrowed");
+        let _subpool2 = borrowed_handle.subpool();
+    }
+
+    #[test]
+    fn test_pool_handle_no_double_free() {
+        // This test ensures that dropping a borrowed handle doesn't destroy the pool
+        let pool = Pool::new();
+        let pool_ptr = pool.as_mut_ptr();
+
+        // Create and drop multiple borrowed handles to the same pool
+        for i in 0..10 {
+            let handle = unsafe { PoolHandle::from_borrowed_raw(pool_ptr) };
+            handle.tag(&format!("iteration-{}", i));
+            // handle is dropped here, but pool should NOT be destroyed
+        }
+
+        // Pool should still be valid
+        pool.tag("still-valid-after-multiple-borrows");
+    }
+
+    #[test]
+    fn test_pool_handle_mixed_ownership() {
+        // Test a scenario with mixed owned and borrowed handles
+        let long_lived_pool = Pool::new();
+        let long_lived_ptr = long_lived_pool.as_mut_ptr();
+
+        // Borrowed handle for long-lived allocations
+        let result_handle = unsafe { PoolHandle::from_borrowed_raw(long_lived_ptr) };
+
+        // Owned handle for temporary work
+        let scratch_pool = Pool::new();
+        let scratch_handle = PoolHandle::owned(scratch_pool);
+
+        // Use both handles
+        result_handle.tag("result-pool");
+        scratch_handle.tag("scratch-pool");
+
+        // Drop scratch handle (destroys the pool)
+        drop(scratch_handle);
+
+        // Drop result handle (does NOT destroy the pool)
+        drop(result_handle);
+
+        // Original pool still valid
+        long_lived_pool.tag("still-valid");
     }
 }
