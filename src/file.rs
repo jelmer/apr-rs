@@ -418,7 +418,6 @@ mod tests {
     use std::io::{Read, Write};
 
     #[test]
-    #[ignore] // Ignore for now - file permissions issue in test environment
     fn test_file_open_write_read() {
         let pool = Pool::new();
 
@@ -430,7 +429,7 @@ mod tests {
             let mut file = File::open(
                 &temp_path,
                 OpenFlags::combine(&[OpenFlags::WRITE, OpenFlags::CREATE, OpenFlags::TRUNCATE]),
-                0o644,
+                apr_sys::APR_FPROT_OS_DEFAULT as i32,
                 &pool,
             )
             .expect("Failed to open file for writing");
@@ -442,7 +441,7 @@ mod tests {
 
         // Read from file
         {
-            let mut file = File::open(&temp_path, OpenFlags::READ, 0o644, &pool)
+            let mut file = File::open(&temp_path, OpenFlags::READ, 0, &pool)
                 .expect("Failed to open file for reading");
 
             let mut buffer = String::new();
