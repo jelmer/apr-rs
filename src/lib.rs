@@ -138,7 +138,7 @@ pub mod xlate;
 pub mod xml;
 
 pub use error::{Error, ErrorContext, Result};
-pub use pool::{Pool, PoolHandle};
+pub use pool::{Pool, PoolHandle, SharedPool};
 pub use status::Status;
 
 // Only re-export types that are commonly needed
