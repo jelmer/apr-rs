@@ -46,7 +46,6 @@ fn test_parse_http() {
     assert_eq!(parse_http("Sun Nov  6 08:49:37 1994"), Some(expected));
 }
 
-#[ignore] // This test is flaky (on some APR versions?). See #26
 #[test]
 fn test_parse_http_invalid() {
     assert_eq!(parse_http("WTAF"), None);
