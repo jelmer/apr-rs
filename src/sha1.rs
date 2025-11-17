@@ -7,12 +7,12 @@ use std::mem::MaybeUninit;
 /// SHA1 context for incremental hashing.
 pub struct Sha1Context<'pool> {
     ctx: apr_sys::apr_sha1_ctx_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Sha1Context<'pool> {
     /// Create a new SHA1 context.
-    pub fn new(_pool: &'pool Pool) -> Self {
+    pub fn new(_pool: &'pool Pool<'pool>) -> Self {
         let mut ctx = MaybeUninit::uninit();
         unsafe {
             apr_sys::apr_sha1_init(ctx.as_mut_ptr());
@@ -70,14 +70,14 @@ pub fn hash_hex(data: &[u8]) -> String {
 }
 
 /// Compute the SHA1 digest of data in one shot (pool-exposed API).
-pub fn sha1(data: &[u8], pool: &Pool) -> [u8; APR_SHA1_DIGESTSIZE] {
+pub fn sha1(data: &[u8], pool: &Pool<'_>) -> [u8; APR_SHA1_DIGESTSIZE] {
     let mut ctx = Sha1Context::new(pool);
     ctx.update_binary(data);
     ctx.finalize()
 }
 
 /// Encode data as a SHA1 hash in hex format (pool-exposed API).
-pub fn sha1_encode(data: &[u8], pool: &Pool) -> String {
+pub fn sha1_encode(data: &[u8], pool: &Pool<'_>) -> String {
     let digest = sha1(data, pool);
     let mut result = String::with_capacity(APR_SHA1_DIGESTSIZE * 2);
     for byte in digest.iter() {
@@ -87,7 +87,7 @@ pub fn sha1_encode(data: &[u8], pool: &Pool) -> String {
 }
 
 /// Encode data as a SHA1 hash in base64 format.
-pub fn sha1_base64(data: &[u8], pool: &Pool) -> String {
+pub fn sha1_base64(data: &[u8], pool: &Pool<'_>) -> String {
     let digest = sha1(data, pool);
     base64_encode(&digest)
 }

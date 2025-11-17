@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 #[derive(Debug)]
 pub struct Uri<'pool> {
     ptr: *mut apr_uri_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 impl<'pool> Uri<'pool> {

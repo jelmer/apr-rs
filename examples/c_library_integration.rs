@@ -48,7 +48,7 @@ mod ffi {
 
 /// Wrapper struct for our C library
 pub struct CLibraryWrapper {
-    pool: Pool,
+    pool: Pool<'static>,
 }
 
 impl CLibraryWrapper {
@@ -92,7 +92,7 @@ impl CLibraryWrapper {
     /// Create a sub-operation with its own memory scope
     pub fn scoped_operation<F, R>(&self, operation: F) -> Result<R>
     where
-        F: FnOnce(&Pool) -> Result<R>,
+        F: FnOnce(&Pool<'_>) -> Result<R>,
     {
         // Create a subpool for this operation
         let subpool = Pool::new();

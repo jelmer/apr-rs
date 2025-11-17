@@ -12,14 +12,14 @@ use std::time::Duration;
 #[repr(transparent)]
 pub struct Socket<'a> {
     raw: *mut apr_sys::apr_socket_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 /// Socket address
 #[repr(transparent)]
 pub struct SockAddr<'a> {
     raw: *mut apr_sys::apr_sockaddr_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 /// Socket address family
@@ -117,7 +117,7 @@ impl From<SocketOption> for i32 {
 
 impl<'a> SockAddr<'a> {
     /// Create a new IPv4 socket address
-    pub fn new_inet(addr: Ipv4Addr, port: u16, pool: &'a Pool) -> Result<Self> {
+    pub fn new_inet(addr: Ipv4Addr, port: u16, pool: &'a Pool<'a>) -> Result<Self> {
         let mut sockaddr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
         let ip_str = addr.to_string();
@@ -146,7 +146,7 @@ impl<'a> SockAddr<'a> {
     }
 
     /// Create a new IPv6 socket address
-    pub fn new_inet6(addr: Ipv6Addr, port: u16, pool: &'a Pool) -> Result<Self> {
+    pub fn new_inet6(addr: Ipv6Addr, port: u16, pool: &'a Pool<'a>) -> Result<Self> {
         let mut sockaddr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
         let ip_str = addr.to_string();
@@ -175,7 +175,7 @@ impl<'a> SockAddr<'a> {
     }
 
     /// Create a socket address for any interface
-    pub fn new_any(port: u16, family: SocketFamily, pool: &'a Pool) -> Result<Self> {
+    pub fn new_any(port: u16, family: SocketFamily, pool: &'a Pool<'a>) -> Result<Self> {
         let mut sockaddr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
         let status = unsafe {
@@ -226,7 +226,7 @@ impl<'a> Socket<'a> {
         family: SocketFamily,
         sock_type: SocketType,
         protocol: SocketProtocol,
-        pool: &'a Pool,
+        pool: &'a Pool<'a>,
     ) -> Result<Self> {
         let mut socket: *mut apr_sys::apr_socket_t = ptr::null_mut();
 
@@ -271,7 +271,7 @@ impl<'a> Socket<'a> {
     }
 
     /// Accept an incoming connection
-    pub fn accept(&mut self, pool: &'a Pool) -> Result<Socket<'a>> {
+    pub fn accept(&mut self, pool: &'a Pool<'a>) -> Result<Socket<'a>> {
         let mut new_socket: *mut apr_sys::apr_socket_t = ptr::null_mut();
 
         let status =
@@ -345,7 +345,7 @@ impl<'a> Socket<'a> {
     }
 
     /// Receive data and sender address (for datagram sockets)
-    pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool) -> Result<(usize, SockAddr<'_>)> {
+    pub fn recvfrom(&mut self, buf: &mut [u8], _pool: &Pool<'_>) -> Result<(usize, SockAddr<'_>)> {
         let mut len = buf.len();
         let from_addr: *mut apr_sys::apr_sockaddr_t = ptr::null_mut();
 
@@ -466,7 +466,9 @@ impl<'a> Drop for Socket<'a> {
 }
 
 /// Get the hostname of the local machine
-pub fn hostname_get(pool: &Pool) -> Result<String> {
+///
+/// The returned string is allocated in the pool and borrows from it.
+pub fn hostname_get<'a>(pool: &'a Pool<'a>) -> Result<&'a str> {
     let hostname_buf = unsafe { apr_sys::apr_palloc(pool.as_mut_ptr(), 256) as *mut c_char };
 
     if hostname_buf.is_null() {
@@ -479,7 +481,11 @@ pub fn hostname_get(pool: &Pool) -> Result<String> {
         return Err(crate::Error::from_status(status.into()));
     }
 
-    unsafe { Ok(CStr::from_ptr(hostname_buf).to_string_lossy().into_owned()) }
+    unsafe {
+        CStr::from_ptr(hostname_buf)
+            .to_str()
+            .map_err(|_| crate::Error::from_status(apr_sys::APR_EINVAL.into()))
+    }
 }
 
 #[cfg(test)]

@@ -15,7 +15,10 @@ use std::path::{Path, PathBuf};
 /// This handles platform-specific path encoding:
 /// - On Unix: paths are typically UTF-8 bytes
 /// - On Windows: converts from UTF-16 to the appropriate byte encoding
-pub fn path_to_cstring<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PoolString<'_>, Status> {
+pub fn path_to_cstring<'a, P: AsRef<Path>>(
+    path: P,
+    pool: &'a Pool<'a>,
+) -> Result<PoolString<'a>, Status> {
     let path = path.as_ref();
 
     #[cfg(unix)]
@@ -59,7 +62,7 @@ pub unsafe fn cstring_to_pathbuf(ptr: *const std::ffi::c_char) -> PathBuf {
 }
 
 /// Normalize a path using APR's path normalization
-pub fn normalize_path<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PathBuf, Status> {
+pub fn normalize_path<P: AsRef<Path>>(path: P, pool: &Pool<'_>) -> Result<PathBuf, Status> {
     let path_cstr = path_to_cstring(path, pool)?;
 
     unsafe {
@@ -78,7 +81,7 @@ pub fn normalize_path<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<PathBuf, S
 }
 
 /// Check if a path is absolute using APR's path checking
-pub fn is_absolute<P: AsRef<Path>>(_path: P, pool: &Pool) -> Result<bool, Status> {
+pub fn is_absolute<P: AsRef<Path>>(_path: P, pool: &Pool<'_>) -> Result<bool, Status> {
     // Note: apr_filepath_root has a different signature than expected
     // For now, use Rust's built-in path checking
     // TODO: Investigate proper APR usage for this
@@ -93,7 +96,7 @@ pub fn is_absolute<P: AsRef<Path>>(_path: P, pool: &Pool) -> Result<bool, Status
 pub fn join_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
     base: P1,
     path: P2,
-    pool: &Pool,
+    pool: &Pool<'_>,
 ) -> Result<PathBuf, Status> {
     let base_cstr = path_to_cstring(base, pool)?;
     let path_cstr = path_to_cstring(path, pool)?;
@@ -114,7 +117,7 @@ pub fn join_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
 }
 
 /// Get the current working directory
-pub fn get_cwd(pool: &Pool) -> Result<PathBuf, Status> {
+pub fn get_cwd(pool: &Pool<'_>) -> Result<PathBuf, Status> {
     unsafe {
         let mut cwd_ptr: *mut std::ffi::c_char = std::ptr::null_mut();
         let status = apr_sys::apr_filepath_get(
@@ -129,7 +132,7 @@ pub fn get_cwd(pool: &Pool) -> Result<PathBuf, Status> {
 }
 
 /// Set the current working directory
-pub fn set_cwd<P: AsRef<Path>>(path: P, pool: &Pool) -> Result<(), Status> {
+pub fn set_cwd<P: AsRef<Path>>(path: P, pool: &Pool<'_>) -> Result<(), Status> {
     let path_cstr = path_to_cstring(path, pool)?;
 
     unsafe {

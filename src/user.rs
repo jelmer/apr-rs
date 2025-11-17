@@ -9,33 +9,33 @@ use std::ptr;
 #[repr(transparent)]
 pub struct UserInfo<'a> {
     raw: *mut apr_sys::apr_uid_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 #[repr(transparent)]
 pub struct GroupInfo<'a> {
     raw: *mut apr_sys::apr_gid_t,
-    _phantom: PhantomData<&'a Pool>,
+    _phantom: PhantomData<&'a Pool<'a>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct User {
-    pub name: String,
+pub struct User<'a> {
+    pub name: &'a str,
     pub uid: u32,
     pub gid: u32,
-    pub comment: String,
-    pub home_dir: String,
-    pub shell: String,
+    pub comment: Option<&'a str>,
+    pub home_dir: Option<&'a str>,
+    pub shell: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Group {
-    pub name: String,
+pub struct Group<'a> {
+    pub name: &'a str,
     pub gid: u32,
-    pub members: Vec<String>,
+    pub members: Vec<&'a str>,
 }
 
-pub fn get_user_by_name(username: &str, pool: &Pool) -> Result<User> {
+pub fn get_user_by_name<'a>(username: &str, pool: &'a Pool<'a>) -> Result<User<'a>> {
     let c_username = CString::new(username)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
@@ -65,22 +65,32 @@ pub fn get_user_by_name(username: &str, pool: &Pool) -> Result<User> {
     };
 
     let name = if status == apr_sys::APR_SUCCESS as i32 && !user_name.is_null() {
-        unsafe { CStr::from_ptr(user_name).to_string_lossy().into_owned() }
+        unsafe {
+            CStr::from_ptr(user_name)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+        }
     } else {
-        username.to_string()
+        // Duplicate username into pool
+        let dup_ptr = pool.pstrdup(username);
+        unsafe {
+            CStr::from_ptr(dup_ptr)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+        }
     };
 
     Ok(User {
         name,
         uid: uid as u32,
         gid: gid as u32,
-        comment: String::new(),
-        home_dir: get_home_directory(pool).unwrap_or_default(),
-        shell: String::new(),
+        comment: None,
+        home_dir: get_home_directory(pool).ok().flatten(),
+        shell: None,
     })
 }
 
-pub fn get_user_by_id(uid: u32, pool: &Pool) -> Result<User> {
+pub fn get_user_by_id<'a>(uid: u32, pool: &'a Pool<'a>) -> Result<User<'a>> {
     let mut user_name: *mut c_char = ptr::null_mut();
     let mut apr_uid = uid as apr_sys::apr_uid_t;
 
@@ -93,22 +103,33 @@ pub fn get_user_by_id(uid: u32, pool: &Pool) -> Result<User> {
     }
 
     let name = if !user_name.is_null() {
-        unsafe { CStr::from_ptr(user_name).to_string_lossy().into_owned() }
+        unsafe {
+            CStr::from_ptr(user_name)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+        }
     } else {
-        format!("uid_{}", uid)
+        // Allocate formatted string in pool
+        let formatted = format!("uid_{}", uid);
+        let ptr = pool.pstrdup(&formatted);
+        unsafe {
+            CStr::from_ptr(ptr)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+        }
     };
 
     Ok(User {
         name,
         uid,
         gid: 0, // Would need additional lookup
-        comment: String::new(),
-        home_dir: get_home_directory(pool).unwrap_or_default(),
-        shell: String::new(),
+        comment: None,
+        home_dir: get_home_directory(pool).ok().flatten(),
+        shell: None,
     })
 }
 
-pub fn get_group_by_name(groupname: &str, pool: &Pool) -> Result<Group> {
+pub fn get_group_by_name<'a>(groupname: &str, pool: &'a Pool<'a>) -> Result<Group<'a>> {
     let c_groupname = CString::new(groupname)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
@@ -122,14 +143,22 @@ pub fn get_group_by_name(groupname: &str, pool: &Pool) -> Result<Group> {
         return Err(crate::Error::from_status(status.into()));
     }
 
+    // Duplicate groupname into pool
+    let dup_ptr = pool.pstrdup(groupname);
+    let name = unsafe {
+        CStr::from_ptr(dup_ptr)
+            .to_str()
+            .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+    };
+
     Ok(Group {
-        name: groupname.to_string(),
+        name,
         gid: gid as u32,
         members: Vec::new(), // APR doesn't provide group membership info
     })
 }
 
-pub fn get_group_by_id(gid: u32, pool: &Pool) -> Result<Group> {
+pub fn get_group_by_id<'a>(gid: u32, pool: &'a Pool<'a>) -> Result<Group<'a>> {
     let mut group_name: *mut c_char = ptr::null_mut();
     let mut apr_gid = gid as apr_sys::apr_gid_t;
 
@@ -142,9 +171,20 @@ pub fn get_group_by_id(gid: u32, pool: &Pool) -> Result<Group> {
     }
 
     let name = if !group_name.is_null() {
-        unsafe { CStr::from_ptr(group_name).to_string_lossy().into_owned() }
+        unsafe {
+            CStr::from_ptr(group_name)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+        }
     } else {
-        format!("gid_{}", gid)
+        // Allocate formatted string in pool
+        let formatted = format!("gid_{}", gid);
+        let ptr = pool.pstrdup(&formatted);
+        unsafe {
+            CStr::from_ptr(ptr)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?
+        }
     };
 
     Ok(Group {
@@ -162,7 +202,7 @@ pub fn get_current_group_id() -> u32 {
     unsafe { apr_sys::apr_gid_current() as u32 }
 }
 
-pub fn get_home_directory(pool: &Pool) -> Result<String> {
+pub fn get_home_directory<'a>(pool: &'a Pool<'a>) -> Result<Option<&'a str>> {
     let mut homedir: *mut c_char = ptr::null_mut();
 
     let status = unsafe {
@@ -174,15 +214,19 @@ pub fn get_home_directory(pool: &Pool) -> Result<String> {
     }
 
     if homedir.is_null() {
-        return Ok(String::from("/"));
+        return Ok(None);
     }
 
     unsafe {
-        Ok(CStr::from_ptr(homedir).to_string_lossy().into_owned())
+        Ok(Some(
+            CStr::from_ptr(homedir)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?,
+        ))
     }
 }
 
-pub fn get_user_home_directory(username: &str, pool: &Pool) -> Result<String> {
+pub fn get_user_home_directory<'a>(username: &str, pool: &'a Pool<'a>) -> Result<Option<&'a str>> {
     let c_username = CString::new(username)
         .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?;
 
@@ -197,11 +241,15 @@ pub fn get_user_home_directory(username: &str, pool: &Pool) -> Result<String> {
     }
 
     if homedir.is_null() {
-        return Ok(String::from("/"));
+        return Ok(None);
     }
 
     unsafe {
-        Ok(CStr::from_ptr(homedir).to_string_lossy().into_owned())
+        Ok(Some(
+            CStr::from_ptr(homedir)
+                .to_str()
+                .map_err(|_| crate::Error::from_status((apr_sys::APR_EINVAL as i32).into()))?,
+        ))
     }
 }
 

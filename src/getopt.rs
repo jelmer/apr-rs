@@ -23,7 +23,7 @@ impl IntoAllowedOptionChars for &[char] {
 /// A command line option.
 pub struct Option<'pool> {
     ptr: *mut apr_sys::apr_getopt_option_t,
-    _pool: PhantomData<&'pool Pool>,
+    _pool: PhantomData<&'pool Pool<'pool>>,
 }
 
 /// An indicator for a command line option.
@@ -64,7 +64,7 @@ impl From<i32> for Indicator {
 impl<'pool> Option<'pool> {
     /// Create a new option.
     pub fn new(
-        pool: &'pool crate::pool::Pool,
+        pool: &'pool crate::pool::Pool<'pool>,
         name: &str,
         has_arg: bool,
         indicator: Indicator,
@@ -134,9 +134,9 @@ impl<'pool> Option<'pool> {
 }
 
 /// A command line option parser.
-pub struct Getopt {
+pub struct Getopt<'pool> {
     ptr: *mut apr_sys::apr_getopt_t,
-    _pool: Pool, // Owns the pool to keep it alive
+    _pool: Pool<'pool>, // Owns the pool to keep it alive
 }
 
 /// The result of parsing a command line option.
@@ -154,7 +154,7 @@ pub enum GetoptResult {
     End,
 }
 
-impl Getopt {
+impl Getopt<'_> {
     /// Create a new `Getopt` instance.
     pub fn new(args: &[&str]) -> Result<Self, crate::Status> {
         let mut os = std::ptr::null_mut();
