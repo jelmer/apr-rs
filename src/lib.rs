@@ -27,7 +27,7 @@
 //! let pool = Pool::new();
 //!
 //! // Create a subpool for scoped allocations
-//! let subpool = pool.create_subpool().unwrap();
+//! let subpool = pool.subpool();
 //! // Memory in subpool is freed when subpool is dropped
 //! ```
 //!
@@ -39,7 +39,7 @@
 //! use apr::{Pool, file::File};
 //!
 //! let pool = Pool::new();
-//! match File::open("example.txt", apr::file::Flag::READ, 0, &pool) {
+//! match File::open("example.txt", apr::file::OpenFlags::READ, 0, &pool) {
 //!     Ok(file) => { /* use file */ },
 //!     Err(e) => eprintln!("Failed to open file: {}", e),
 //! }
@@ -157,7 +157,7 @@ pub use apr_sys::apr_time_t;
 #[macro_export]
 macro_rules! apr_array {
     ($pool:expr; $($item:expr),* $(,)?) => {{
-        let mut array = $crate::tables::ArrayHeader::new($pool);
+        let mut array = $crate::tables::TypedArray::new($pool, 0);
         $(
             array.push($item);
         )*
@@ -167,7 +167,7 @@ macro_rules! apr_array {
 
 /// Create an APR table with initial key-value pairs.
 ///
-/// # Examples  
+/// # Examples
 /// ```
 /// # use apr::{Pool, apr_table};
 /// let pool = Pool::new();
@@ -177,9 +177,9 @@ macro_rules! apr_array {
 #[macro_export]
 macro_rules! apr_table {
     ($pool:expr; $($key:expr => $value:expr),* $(,)?) => {{
-        let mut table = $crate::tables::Table::new($pool);
+        let mut table = $crate::tables::StringTable::new($pool, 0);
         $(
-            table.insert($key, $value);
+            table.set($key, $value);
         )*
         table
     }};
@@ -192,14 +192,14 @@ macro_rules! apr_table {
 /// # use apr::{Pool, apr_hash};
 /// let pool = Pool::new();
 /// let hash = apr_hash![&pool; "key1" => &"value1", "key2" => &"value2"];
-/// assert_eq!(hash.get("key1"), Some(&"value1"));
+/// assert_eq!(hash.get_ref("key1"), Some(&"value1"));
 /// ```
 #[macro_export]
 macro_rules! apr_hash {
     ($pool:expr; $($key:expr => $value:expr),* $(,)?) => {{
-        let mut hash = $crate::hash::Hash::new($pool);
+        let mut hash = $crate::hash::TypedHash::new($pool);
         $(
-            hash.insert($key, $value);
+            hash.insert_ref($key, $value);
         )*
         hash
     }};
