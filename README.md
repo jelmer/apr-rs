@@ -24,7 +24,7 @@ This crate provides safe Rust bindings to the Apache Portable Runtime (APR), a C
 
 ### Examples of C libraries that use APR:
 - Apache HTTP Server modules
-- Subversion (SVN) libraries
+- [Subversion (SVN) libraries](https://github.com/jelmer/subversion-rs)
 - Apache Serf
 - Any custom C library built on top of APR
 
