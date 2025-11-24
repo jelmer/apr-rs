@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Install apr
       run: sudo apt install -y libapr1-dev libaprutil1-dev libutf8proc-dev
       if: "matrix.os == 'ubuntu-latest'"
