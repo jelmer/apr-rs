@@ -66,7 +66,7 @@ impl File {
         pool: &Pool<'_>,
     ) -> Result<Self, Status> {
         let path_str = path.as_ref().to_string_lossy();
-        let path_cstr = std::ffi::CString::new(path_str.as_ref())
+        let path_cstr = alloc::ffi::CString::new(path_str.as_ref())
             .map_err(|_| Status::from(apr_sys::APR_EINVAL as i32))?;
 
         let mut file_ptr: *mut apr_sys::apr_file_t = std::ptr::null_mut();
@@ -94,14 +94,14 @@ impl File {
     ///
     /// The temporary file will have secure default permissions (typically 0600).
     pub fn temp_file(template: &str, flags: OpenFlags, pool: &Pool<'_>) -> Result<Self, Status> {
-        let template_cstr = std::ffi::CString::new(template)
+        let template_cstr = alloc::ffi::CString::new(template)
             .map_err(|_| Status::from(apr_sys::APR_EINVAL as i32))?;
 
         let mut file_ptr: *mut apr_sys::apr_file_t = std::ptr::null_mut();
         let status = unsafe {
             apr_sys::apr_file_mktemp(
                 &mut file_ptr,
-                template_cstr.as_ptr() as *mut std::ffi::c_char,
+                template_cstr.as_ptr() as *mut core::ffi::c_char,
                 flags.0,
                 pool.as_mut_ptr(),
             )
@@ -217,7 +217,7 @@ impl Read for File {
         let status = unsafe {
             apr_sys::apr_file_read(
                 self.raw,
-                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                buf.as_mut_ptr() as *mut core::ffi::c_void,
                 &mut bytes_read,
             )
         };
@@ -240,7 +240,7 @@ impl Write for File {
         let status = unsafe {
             apr_sys::apr_file_write(
                 self.raw,
-                buf.as_ptr() as *const std::ffi::c_void,
+                buf.as_ptr() as *const core::ffi::c_void,
                 &mut bytes_written,
             )
         };

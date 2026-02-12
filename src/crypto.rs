@@ -5,10 +5,13 @@
 
 use crate::pool::Pool;
 use crate::{Error, Status};
-use std::ffi::c_char;
-use std::ffi::CString;
-use std::marker::PhantomData;
-use std::ptr;
+use alloc::ffi::CString;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ffi::c_char;
+use core::marker::PhantomData;
+use core::ptr;
 
 /// Crypto driver/factory handle.
 pub struct CryptoDriver<'pool> {
@@ -556,9 +559,8 @@ mod tests {
     fn test_crypto_drivers() {
         let pool = Pool::new();
         let _ = Crypto::init(&pool);
-        let drivers = crypto_drivers(&pool);
+        let _drivers = crypto_drivers(&pool);
         // May be empty if no drivers available
-        println!("Available crypto drivers: {:?}", drivers);
     }
 
     #[test]

@@ -13,7 +13,7 @@ pub const APU_PATCH_VERSION: u32 = apr_sys::APU_PATCH_VERSION;
 pub fn apu_version_string() -> &'static str {
     unsafe {
         let ptr = apr_sys::apu_version_string();
-        std::ffi::CStr::from_ptr(ptr).to_str().unwrap()
+        core::ffi::CStr::from_ptr(ptr).to_str().unwrap()
     }
 }
 
@@ -30,7 +30,7 @@ pub const APR_PATCH_VERSION: u32 = apr_sys::APR_PATCH_VERSION;
 pub fn apr_version_string() -> &'static str {
     unsafe {
         let ptr = apr_sys::apr_version_string();
-        std::ffi::CStr::from_ptr(ptr).to_str().unwrap()
+        core::ffi::CStr::from_ptr(ptr).to_str().unwrap()
     }
 }
 

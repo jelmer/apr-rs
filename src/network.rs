@@ -1,11 +1,12 @@
 //! Network I/O with safe socket wrappers
 
 use crate::{pool::Pool, Result};
-use std::ffi::c_char;
-use std::ffi::{CStr, CString};
-use std::marker::PhantomData;
+use alloc::ffi::CString;
+use core::ffi::c_char;
+use core::ffi::CStr;
+use core::marker::PhantomData;
+use core::ptr;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::ptr;
 use std::time::Duration;
 
 /// Network socket

@@ -5,9 +5,10 @@
 //! blocks on pop when empty.
 
 use crate::{pool::Pool, Error, Result, Status};
-use std::ffi::c_void;
-use std::marker::PhantomData;
-use std::ptr;
+use alloc::boxed::Box;
+use core::ffi::c_void;
+use core::marker::PhantomData;
+use core::ptr;
 
 /// A thread-safe FIFO queue that stores raw pointers.
 ///
@@ -176,8 +177,8 @@ impl<'pool> Queue<'pool> {
 unsafe impl<'pool> Send for Queue<'pool> {}
 unsafe impl<'pool> Sync for Queue<'pool> {}
 
-impl<'pool> std::fmt::Debug for Queue<'pool> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'pool> core::fmt::Debug for Queue<'pool> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Queue")
             .field("size", &self.size())
             .field("ptr", &self.ptr)
@@ -343,8 +344,8 @@ impl<'pool, T: Send> BoxedQueue<'pool, T> {
     }
 }
 
-impl<'pool, T: Send> std::fmt::Debug for BoxedQueue<'pool, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'pool, T: Send> core::fmt::Debug for BoxedQueue<'pool, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("BoxedQueue")
             .field("size", &self.size())
             .finish()
@@ -355,6 +356,7 @@ impl<'pool, T: Send> std::fmt::Debug for BoxedQueue<'pool, T> {
 mod tests {
     use super::*;
     use crate::Pool;
+    use alloc::string::String;
 
     #[test]
     fn test_queue_basic() {

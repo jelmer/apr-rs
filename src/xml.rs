@@ -4,10 +4,11 @@
 
 use crate::pool::Pool;
 use crate::{Error, Status};
-use std::ffi::c_char;
-use std::ffi::CStr;
-use std::marker::PhantomData;
-use std::ptr;
+use alloc::string::String;
+use core::ffi::c_char;
+use core::ffi::CStr;
+use core::marker::PhantomData;
+use core::ptr;
 
 /// XML parser handle.
 pub struct XmlParser<'pool> {
@@ -350,6 +351,9 @@ impl<'pool> Iterator for XmlAttrIter<'pool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_parse_simple_xml() {

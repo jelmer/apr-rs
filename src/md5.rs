@@ -1,11 +1,15 @@
-//! MD5 hashing functionality from apr-util.
+// MD5 hashing functionality from apr-util.
+
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
 
 use crate::pool::Pool;
 use crate::{Error, Status};
-use std::ffi::c_char;
-use std::ffi::CStr;
-use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use core::ffi::c_char;
+use core::ffi::CStr;
+use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 
 /// MD5 context for incremental hashing.
 pub struct Md5Context<'pool> {
@@ -34,7 +38,7 @@ impl<'pool> Md5Context<'pool> {
         let status = unsafe {
             apr_sys::apr_md5_update(
                 &mut self.ctx,
-                data.as_ptr() as *const std::os::raw::c_void,
+                data.as_ptr() as *const core::ffi::c_void,
                 data.len() as apr_sys::apr_size_t,
             )
         };
@@ -88,9 +92,9 @@ pub fn md5_encode(data: &[u8], pool: &Pool<'_>) -> Result<String, Error> {
 
 /// Encode a password using the Apache MD5 algorithm (for .htpasswd files).
 pub fn md5_encode_password(password: &str, salt: &str) -> Result<String, Error> {
-    let password_cstr = std::ffi::CString::new(password)
+    let password_cstr = alloc::ffi::CString::new(password)
         .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?;
-    let salt_cstr = std::ffi::CString::new(salt)
+    let salt_cstr = alloc::ffi::CString::new(salt)
         .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?;
 
     let mut result_buf = vec![0u8; 120]; // Apache MD5 passwords are at most 120 chars

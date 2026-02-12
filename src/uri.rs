@@ -1,8 +1,9 @@
 //! URI parsing and manipulation.
 use crate::pool::Pool;
+use alloc::string::{String, ToString};
 pub use apr_sys::apr_uri_t;
-use std::ffi::CStr;
-use std::marker::PhantomData;
+use core::ffi::CStr;
+use core::marker::PhantomData;
 
 /// A structure to represent a URI.
 #[derive(Debug)]
@@ -145,11 +146,11 @@ impl<'pool> Uri<'pool> {
     /// Parse a hostinfo string.
     pub fn parse_hostinfo(pool: &'pool Pool, hostinfo: &str) -> Result<Self, crate::Status> {
         let uri = pool.calloc::<apr_uri_t>();
-        let hostinfo = std::ffi::CString::new(hostinfo).unwrap();
+        let hostinfo = alloc::ffi::CString::new(hostinfo).unwrap();
         let status = unsafe {
             apr_sys::apr_uri_parse_hostinfo(
                 pool.as_mut_ptr(),
-                hostinfo.as_ptr() as *const std::ffi::c_char,
+                hostinfo.as_ptr() as *const core::ffi::c_char,
                 uri,
             )
         };
@@ -167,11 +168,11 @@ impl<'pool> Uri<'pool> {
     /// Parse a URI string.
     pub fn parse(pool: &'pool Pool, url: &str) -> Result<Self, crate::Status> {
         let uri = pool.calloc::<apr_uri_t>();
-        let url = std::ffi::CString::new(url).unwrap();
+        let url = alloc::ffi::CString::new(url).unwrap();
         let status = unsafe {
             apr_sys::apr_uri_parse(
                 pool.as_mut_ptr(),
-                url.as_ptr() as *const std::ffi::c_char,
+                url.as_ptr() as *const core::ffi::c_char,
                 uri,
             )
         };
@@ -203,8 +204,8 @@ impl<'pool> Uri<'pool> {
 }
 
 // Add Display implementation
-impl<'pool> std::fmt::Display for Uri<'pool> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'pool> core::fmt::Display for Uri<'pool> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.unparse(0))
     }
 }
@@ -225,8 +226,8 @@ impl<'pool> AsRef<str> for Uri<'pool> {
 
 /// Return the default port for a given scheme.
 pub fn port_of_scheme(scheme: &str) -> u16 {
-    let scheme = std::ffi::CString::new(scheme).unwrap();
-    unsafe { apr_sys::apr_uri_port_of_scheme(scheme.as_ptr() as *const std::ffi::c_char) }
+    let scheme = alloc::ffi::CString::new(scheme).unwrap();
+    unsafe { apr_sys::apr_uri_port_of_scheme(scheme.as_ptr() as *const core::ffi::c_char) }
 }
 
 #[cfg(test)]

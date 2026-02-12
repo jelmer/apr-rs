@@ -1,4 +1,5 @@
 //! Time handling.
+use alloc::string::{String, ToString};
 pub use apr_sys::{apr_interval_time_t, apr_time_t};
 
 /// Time in microseconds since the epoch.
@@ -26,7 +27,7 @@ impl Time {
     pub fn ctime(&self) -> String {
         let mut buf: [u8; apr_sys::APR_CTIME_LEN as usize] = [0; apr_sys::APR_CTIME_LEN as usize];
         unsafe {
-            apr_sys::apr_ctime(buf.as_mut_ptr() as *mut std::ffi::c_char, self.0);
+            apr_sys::apr_ctime(buf.as_mut_ptr() as *mut core::ffi::c_char, self.0);
         }
         String::from_utf8_lossy(&buf[..])
             .trim_end_matches('\0')
@@ -38,7 +39,7 @@ impl Time {
         let mut buf: [u8; apr_sys::APR_RFC822_DATE_LEN as usize] =
             [0; apr_sys::APR_RFC822_DATE_LEN as usize];
         unsafe {
-            apr_sys::apr_rfc822_date(buf.as_mut_ptr() as *mut std::ffi::c_char, self.0);
+            apr_sys::apr_rfc822_date(buf.as_mut_ptr() as *mut core::ffi::c_char, self.0);
         }
         String::from_utf8_lossy(&buf[..])
             .trim_end_matches('\0')
@@ -47,6 +48,7 @@ impl Time {
 }
 
 /// Convert SystemTime to apr_time_t (microseconds since Unix epoch)
+#[cfg(feature = "std")]
 pub fn to_apr_time(system_time: std::time::SystemTime) -> apr_time_t {
     system_time
         .duration_since(std::time::UNIX_EPOCH)
@@ -55,16 +57,19 @@ pub fn to_apr_time(system_time: std::time::SystemTime) -> apr_time_t {
 }
 
 /// Convert apr_time_t to SystemTime
+#[cfg(feature = "std")]
 pub fn to_system_time(apr_time: apr_time_t) -> std::time::SystemTime {
     std::time::UNIX_EPOCH + std::time::Duration::from_micros(apr_time as u64)
 }
 
+#[cfg(feature = "std")]
 impl From<std::time::SystemTime> for Time {
     fn from(system_time: std::time::SystemTime) -> Self {
         Self(to_apr_time(system_time))
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Time> for std::time::SystemTime {
     fn from(time: Time) -> Self {
         to_system_time(time.0)
@@ -89,8 +94,8 @@ impl Default for Time {
     }
 }
 
-impl std::fmt::Display for Time {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Time {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.rfc822_date())
     }
 }
@@ -102,6 +107,7 @@ impl AsRef<apr_time_t> for Time {
 }
 
 // Add arithmetic operations for Time
+#[cfg(feature = "std")]
 impl std::ops::Add<std::time::Duration> for Time {
     type Output = Time;
 
@@ -110,6 +116,7 @@ impl std::ops::Add<std::time::Duration> for Time {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::ops::Sub<std::time::Duration> for Time {
     type Output = Time;
 
@@ -118,6 +125,7 @@ impl std::ops::Sub<std::time::Duration> for Time {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::ops::Sub<Time> for Time {
     type Output = std::time::Duration;
 
@@ -145,6 +153,7 @@ pub trait IntoTime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[test]
     fn test_time_now() {
@@ -164,6 +173,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_system_time_conversion() {
         use std::time::{Duration, SystemTime};
 
@@ -180,6 +190,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_utility_functions() {
         use std::time::{Duration, SystemTime};
 
@@ -194,6 +205,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_time_traits() {
         let time1 = Time::now();
 

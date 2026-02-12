@@ -1,5 +1,7 @@
 //! Status codes and error handling.
 
+use alloc::string::{String, ToString};
+
 /// Status code type.
 pub type StatusCode = u32;
 
@@ -127,7 +129,7 @@ impl Status {
             let mut buf = [0u8; 1024];
             apr_sys::apr_strerror(
                 status_code as apr_sys::apr_status_t,
-                buf.as_mut_ptr() as *mut std::ffi::c_char,
+                buf.as_mut_ptr() as *mut core::ffi::c_char,
                 buf.len(),
             );
             buf
@@ -192,13 +194,14 @@ impl From<u32> for Status {
     }
 }
 
-impl std::fmt::Display for Status {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Display for Status {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let status_code: u32 = (*self).into();
         write!(f, "{} ({})", self.strerror(), status_code)
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Status {}
 
 impl From<Status> for u32 {
@@ -258,18 +261,21 @@ impl From<i32> for Status {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::ErrorKind> for Status {
     fn from(kind: std::io::ErrorKind) -> Self {
         (kind as u32).into()
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Status {
     fn from(error: std::io::Error) -> Self {
         error.kind().into()
     }
 }
 
+#[cfg(feature = "std")]
 impl From<Status> for std::io::Error {
     fn from(status: Status) -> Self {
         let kind = match status {
@@ -300,6 +306,7 @@ pub fn apr_result(status_code: i32) -> Result<(), Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[test]
     fn test_status_to_u32_returns_apr_value() {

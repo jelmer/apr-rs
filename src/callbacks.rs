@@ -3,7 +3,8 @@
 //! This module provides safe abstractions for passing Rust closures to C functions
 //! that expect callback function pointers with void* baton parameters.
 
-use std::ffi::c_void;
+use alloc::boxed::Box;
+use core::ffi::c_void;
 
 /// Simple wrapper for passing Rust closures as C callbacks.
 ///

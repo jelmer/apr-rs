@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 //! Safe Rust bindings for the Apache Portable Runtime (APR) library.
 //!
@@ -35,7 +36,7 @@
 //!
 //! APR functions return status codes that this crate converts to Rust `Result` types:
 //!
-//! ```no_run
+//! ```ignore
 //! use apr::{Pool, file::File};
 //!
 //! let pool = Pool::new();
@@ -86,6 +87,8 @@
 //! - Memory pools ensure proper cleanup when dropped
 //! - The crate leverages Rust's ownership system for resource management
 
+extern crate alloc;
+
 /// Base64 encoding and decoding
 pub mod base64;
 /// Callback function types and utilities
@@ -97,6 +100,7 @@ pub mod date;
 /// Error types and result handling
 pub mod error;
 /// File I/O operations
+#[cfg(feature = "std")]
 pub mod file;
 /// Command-line option parsing
 pub mod getopt;
@@ -107,8 +111,10 @@ pub mod md5;
 /// Memory-mapped file support
 pub mod mmap;
 /// Network I/O and socket operations
+#[cfg(feature = "std")]
 pub mod network;
 /// File path manipulation utilities
+#[cfg(feature = "std")]
 pub mod paths;
 /// Memory pool management
 pub mod pool;

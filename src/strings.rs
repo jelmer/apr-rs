@@ -1,7 +1,9 @@
 //! String utilities for safe C string handling.
 use crate::pool::Pool;
-use std::ffi::{c_char, CStr, CString};
-use std::marker::PhantomData;
+use alloc::ffi::CString;
+use alloc::string::String;
+use core::ffi::{c_char, CStr};
+use core::marker::PhantomData;
 
 /// Borrowed byte string backed by pool memory
 ///
@@ -41,12 +43,12 @@ impl<'a> BStr<'a> {
     }
 
     /// Try to convert to UTF-8 string
-    pub fn to_str(&self) -> Result<&str, std::str::Utf8Error> {
-        std::str::from_utf8(self.data)
+    pub fn to_str(&self) -> Result<&str, core::str::Utf8Error> {
+        core::str::from_utf8(self.data)
     }
 
     /// Convert to UTF-8 string with lossy conversion
-    pub fn to_string_lossy(&self) -> std::borrow::Cow<'_, str> {
+    pub fn to_string_lossy(&self) -> alloc::borrow::Cow<'_, str> {
         String::from_utf8_lossy(self.data)
     }
 
@@ -67,7 +69,7 @@ impl<'a> AsRef<[u8]> for BStr<'a> {
     }
 }
 
-impl<'a> std::ops::Deref for BStr<'a> {
+impl<'a> core::ops::Deref for BStr<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -75,8 +77,8 @@ impl<'a> std::ops::Deref for BStr<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for BStr<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> core::fmt::Display for BStr<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", String::from_utf8_lossy(self.data))
     }
 }
@@ -99,7 +101,7 @@ impl<'a> From<&'a str> for BStr<'a> {
     }
 }
 
-impl<'a> std::borrow::Borrow<[u8]> for BStr<'a> {
+impl<'a> core::borrow::Borrow<[u8]> for BStr<'a> {
     fn borrow(&self) -> &[u8] {
         self.data
     }
@@ -137,7 +139,7 @@ impl<'a> BStrUtf8<'a> {
     /// - ptr must be valid for the lifetime 'a
     /// - ptr must point to null-terminated string
     /// - The underlying pool must remain alive for 'a
-    pub unsafe fn from_ptr(ptr: *const c_char) -> Result<Self, std::str::Utf8Error> {
+    pub unsafe fn from_ptr(ptr: *const c_char) -> Result<Self, core::str::Utf8Error> {
         if ptr.is_null() {
             Ok(BStrUtf8 {
                 data: "",
@@ -175,7 +177,7 @@ impl<'a> AsRef<str> for BStrUtf8<'a> {
     }
 }
 
-impl<'a> std::ops::Deref for BStrUtf8<'a> {
+impl<'a> core::ops::Deref for BStrUtf8<'a> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -183,8 +185,8 @@ impl<'a> std::ops::Deref for BStrUtf8<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for BStrUtf8<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> core::fmt::Display for BStrUtf8<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.data)
     }
 }
@@ -199,10 +201,10 @@ impl<'a> From<&'a str> for BStrUtf8<'a> {
 }
 
 impl<'a> TryFrom<&'a [u8]> for BStrUtf8<'a> {
-    type Error = std::str::Utf8Error;
+    type Error = core::str::Utf8Error;
 
     fn try_from(data: &'a [u8]) -> Result<Self, Self::Error> {
-        let s = std::str::from_utf8(data)?;
+        let s = core::str::from_utf8(data)?;
         Ok(BStrUtf8 {
             data: s,
             _pool: PhantomData,
@@ -210,7 +212,7 @@ impl<'a> TryFrom<&'a [u8]> for BStrUtf8<'a> {
     }
 }
 
-impl<'a> std::borrow::Borrow<str> for BStrUtf8<'a> {
+impl<'a> core::borrow::Borrow<str> for BStrUtf8<'a> {
     fn borrow(&self) -> &str {
         self.data
     }
@@ -246,7 +248,7 @@ impl<'a> PoolString<'a> {
     }
 
     /// Try to get as UTF-8 string
-    pub fn as_str(&self) -> Result<&str, std::str::Utf8Error> {
+    pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
         unsafe {
             let cstr = CStr::from_ptr(self.ptr);
             cstr.to_str()
@@ -272,8 +274,8 @@ impl<'a> PoolString<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for PoolString<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> core::fmt::Display for PoolString<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.as_str() {
             Ok(s) => write!(f, "{}", s),
             Err(_) => write!(f, "{:?}", self.as_bytes()),
@@ -281,8 +283,8 @@ impl<'a> std::fmt::Display for PoolString<'a> {
     }
 }
 
-impl<'a> std::fmt::Debug for PoolString<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> core::fmt::Debug for PoolString<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.as_str() {
             Ok(s) => write!(f, "PoolString({:?})", s),
             Err(_) => write!(f, "PoolString({:?})", self.as_bytes()),
@@ -291,7 +293,7 @@ impl<'a> std::fmt::Debug for PoolString<'a> {
 }
 
 /// Duplicate a Rust string into pool-allocated memory as a C string
-pub fn pstrdup<'a>(s: &str, pool: &'a Pool) -> Result<PoolString<'a>, std::ffi::NulError> {
+pub fn pstrdup<'a>(s: &str, pool: &'a Pool) -> Result<PoolString<'a>, alloc::ffi::NulError> {
     let cstring = CString::new(s)?;
     let ptr = unsafe { apr_sys::apr_pstrdup(pool.as_mut_ptr(), cstring.as_ptr()) };
     Ok(PoolString {
@@ -301,7 +303,7 @@ pub fn pstrdup<'a>(s: &str, pool: &'a Pool) -> Result<PoolString<'a>, std::ffi::
 }
 
 /// Get raw pointer version (for advanced users)
-pub fn pstrdup_raw(s: &str, pool: &Pool<'_>) -> Result<*const c_char, std::ffi::NulError> {
+pub fn pstrdup_raw(s: &str, pool: &Pool<'_>) -> Result<*const c_char, alloc::ffi::NulError> {
     Ok(pstrdup(s, pool)?.as_ptr())
 }
 
@@ -319,7 +321,7 @@ pub fn pstrdup_raw(s: &str, pool: &Pool<'_>) -> Result<*const c_char, std::ffi::
 /// let cstr = make_cstring("hello", &pool).unwrap();
 /// assert_eq!(cstr.to_str().unwrap(), "hello");
 /// ```
-pub fn make_cstring<'a>(s: &str, pool: &'a Pool) -> Result<&'a CStr, std::ffi::NulError> {
+pub fn make_cstring<'a>(s: &str, pool: &'a Pool) -> Result<&'a CStr, alloc::ffi::NulError> {
     let ptr = pstrdup_raw(s, pool)?;
     Ok(unsafe { CStr::from_ptr(ptr) })
 }
@@ -329,7 +331,7 @@ pub fn pstrndup<'a>(
     s: &str,
     n: usize,
     pool: &'a Pool,
-) -> Result<PoolString<'a>, std::ffi::NulError> {
+) -> Result<PoolString<'a>, alloc::ffi::NulError> {
     let cstring = CString::new(s)?;
     let ptr = unsafe { apr_sys::apr_pstrndup(pool.as_mut_ptr(), cstring.as_ptr(), n) };
     Ok(PoolString {
@@ -345,10 +347,10 @@ pub fn pmemdup<'a>(data: &[u8], pool: &'a Pool) -> &'a [u8] {
     unsafe {
         let ptr = apr_sys::apr_pmemdup(
             pool.as_mut_ptr(),
-            data.as_ptr() as *const std::ffi::c_void,
+            data.as_ptr() as *const core::ffi::c_void,
             data.len(),
         ) as *const u8;
-        std::slice::from_raw_parts(ptr, data.len())
+        core::slice::from_raw_parts(ptr, data.len())
     }
 }
 
@@ -358,6 +360,8 @@ pub fn pmemdup<'a>(data: &[u8], pool: &'a Pool) -> &'a [u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
+    use alloc::string::ToString;
 
     #[test]
     fn test_bstr() {
@@ -489,7 +493,7 @@ mod tests {
         assert_eq!(bstr, &b"hello"[..]);
 
         // Test Borrow trait
-        let borrowed: &[u8] = std::borrow::Borrow::borrow(&bstr);
+        let borrowed: &[u8] = core::borrow::Borrow::borrow(&bstr);
         assert_eq!(borrowed, b"hello");
 
         // Test BStrUtf8 PartialEq implementations
@@ -498,7 +502,7 @@ mod tests {
         assert_eq!(bstr_utf8, String::from("hello"));
 
         // Test Borrow trait for BStrUtf8
-        let borrowed: &str = std::borrow::Borrow::borrow(&bstr_utf8);
+        let borrowed: &str = core::borrow::Borrow::borrow(&bstr_utf8);
         assert_eq!(borrowed, "hello");
     }
 }

@@ -1,11 +1,11 @@
 //! Process and global locking mechanisms
 
 use crate::{pool::Pool, Result};
-use std::ffi::CString;
-use std::ffi::c_char;
-use std::marker::PhantomData;
+use alloc::ffi::CString;
+use core::ffi::c_char;
+use core::marker::PhantomData;
 use std::path::Path;
-use std::ptr;
+use core::ptr;
 
 #[repr(transparent)]
 pub struct ProcMutex<'a> {
@@ -235,7 +235,7 @@ pub fn proc_mutex_lockfile(mutex: &ProcMutex) -> Result<String> {
     }
 
     unsafe {
-        Ok(std::ffi::CStr::from_ptr(lockfile)
+        Ok(core::ffi::CStr::from_ptr(lockfile)
             .to_string_lossy()
             .into_owned())
     }
@@ -255,7 +255,7 @@ pub fn proc_mutex_name(mutex: &ProcMutex) -> Result<String> {
     }
 
     unsafe {
-        Ok(std::ffi::CStr::from_ptr(name)
+        Ok(core::ffi::CStr::from_ptr(name)
             .to_string_lossy()
             .into_owned())
     }
@@ -267,7 +267,7 @@ pub fn proc_mutex_defname() -> String {
         if name.is_null() {
             String::from("default")
         } else {
-            std::ffi::CStr::from_ptr(name)
+            core::ffi::CStr::from_ptr(name)
                 .to_string_lossy()
                 .into_owned()
         }

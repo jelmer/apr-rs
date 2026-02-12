@@ -18,7 +18,9 @@ ctor = "0.6"
 url = { version = "2", optional = true }
 
 [features]
-url = ["dep:url"]
+default = ["std"]
+std = []
+url = ["dep:url", "std"]
 pool-debug = ["apr-sys/pool-debug"]
 
 [build-dependencies]

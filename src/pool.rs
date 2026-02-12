@@ -1,8 +1,8 @@
 //! Memory pool management.
+use alloc::rc::Rc;
 use apr_sys;
-use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
+use core::mem::ManuallyDrop;
+use core::ops::{Deref, DerefMut};
 
 /// A memory pool.
 ///
@@ -14,7 +14,7 @@ pub struct Pool<'pool> {
     raw: *mut apr_sys::apr_pool_t,
     // Pools are not Send or Sync - they are single-threaded
     // Lifetime ensures subpools don't outlive parent
-    _marker: std::marker::PhantomData<&'pool ()>,
+    _marker: core::marker::PhantomData<&'pool ()>,
 }
 
 #[cfg(feature = "pool-debug")]
@@ -24,8 +24,8 @@ macro_rules! pool_debug {
     ($name:ident, $doc:expr) => {
         #[doc = $doc]
         pub fn $name(&mut self) -> Self {
-            let mut subpool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
-            let location = std::concat!(file!(), ":", line!());
+            let mut subpool: *mut apr_sys::apr_pool_t = core::ptr::null_mut();
+            let location = core::concat!(file!(), ":", line!());
             Pool::new_debug(location)
         }
     };
@@ -42,18 +42,18 @@ impl Pool<'static> {
     ///
     /// Root pools have a `'static` lifetime since they have no parent.
     pub fn new() -> Self {
-        let mut pool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
+        let mut pool: *mut apr_sys::apr_pool_t = core::ptr::null_mut();
         unsafe {
             apr_sys::apr_pool_create_ex(
                 &mut pool,
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
                 None,
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
             );
         }
         Pool {
             raw: pool,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         }
     }
 
@@ -62,19 +62,19 @@ impl Pool<'static> {
     ///
     /// This is used for debugging memory pool issues and tracking where pools are created.
     pub fn new_debug(location: &str) -> Self {
-        let mut pool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
+        let mut pool: *mut apr_sys::apr_pool_t = core::ptr::null_mut();
         unsafe {
             apr_sys::apr_pool_create_ex_debug(
                 &mut pool,
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
                 None,
-                std::ptr::null_mut(),
-                location.as_ptr() as *const std::ffi::c_char,
+                core::ptr::null_mut(),
+                location.as_ptr() as *const core::ffi::c_char,
             );
         }
         Pool {
             raw: pool,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         }
     }
 }
@@ -89,7 +89,7 @@ impl<'pool> Pool<'pool> {
     pub unsafe fn from_raw(ptr: *mut apr_sys::apr_pool_t) -> Self {
         Pool {
             raw: ptr,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         }
     }
 
@@ -108,13 +108,13 @@ impl<'pool> Pool<'pool> {
     /// The returned pool's lifetime is bounded by this pool, ensuring the subpool
     /// cannot outlive its parent.
     pub fn subpool(&self) -> Pool<'_> {
-        let mut subpool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
+        let mut subpool: *mut apr_sys::apr_pool_t = core::ptr::null_mut();
         unsafe {
-            apr_sys::apr_pool_create_ex(&mut subpool, self.raw, None, std::ptr::null_mut());
+            apr_sys::apr_pool_create_ex(&mut subpool, self.raw, None, core::ptr::null_mut());
         }
         Pool {
             raw: subpool,
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         }
     }
 
@@ -126,18 +126,18 @@ impl<'pool> Pool<'pool> {
 
     #[allow(clippy::mut_from_ref)]
     /// Allocate memory in the pool.
-    pub fn alloc<T: Sized>(&self) -> *mut std::mem::MaybeUninit<T> {
-        let size = std::mem::size_of::<T>();
-        unsafe { apr_sys::apr_palloc(self.raw, size) as *mut std::mem::MaybeUninit<T> }
+    pub fn alloc<T: Sized>(&self) -> *mut core::mem::MaybeUninit<T> {
+        let size = core::mem::size_of::<T>();
+        unsafe { apr_sys::apr_palloc(self.raw, size) as *mut core::mem::MaybeUninit<T> }
     }
 
     /// Allocate memory in the pool and zero it.
     #[allow(clippy::mut_from_ref)]
     pub fn calloc<T: Sized>(&self) -> *mut T {
-        let size = std::mem::size_of::<T>();
+        let size = core::mem::size_of::<T>();
         unsafe {
             let x = apr_sys::apr_palloc(self.raw, size) as *mut T;
-            std::ptr::write_bytes(x as *mut u8, 0, size);
+            core::ptr::write_bytes(x as *mut u8, 0, size);
             x
         }
     }
@@ -149,17 +149,19 @@ impl<'pool> Pool<'pool> {
 
     /// Set a tag for the pool.
     pub fn tag(&self, tag: &str) {
-        let tag = std::ffi::CString::new(tag).unwrap();
+        use alloc::ffi::CString;
+        let tag = CString::new(tag).unwrap();
         unsafe {
-            apr_sys::apr_pool_tag(self.raw, tag.as_ptr() as *const std::ffi::c_char);
+            apr_sys::apr_pool_tag(self.raw, tag.as_ptr() as *const core::ffi::c_char);
         }
     }
 
     /// Allocate a C string in the pool.
     ///
     /// The string is copied into pool-managed memory and will live as long as the pool.
-    pub fn pstrdup(&self, s: &str) -> *const std::ffi::c_char {
-        let c_str = std::ffi::CString::new(s).expect("Invalid C string");
+    pub fn pstrdup(&self, s: &str) -> *const core::ffi::c_char {
+        use alloc::ffi::CString;
+        let c_str = CString::new(s).expect("Invalid C string");
         unsafe { apr_sys::apr_pstrdup(self.raw, c_str.as_ptr()) }
     }
 
@@ -186,7 +188,7 @@ impl<'pool> Pool<'pool> {
     #[cfg(feature = "pool-debug")]
     pub unsafe fn fn_clear_debug(&mut self, location: &str) {
         unsafe {
-            apr_sys::apr_pool_clear_debug(self.raw, location.as_ptr() as *const std::ffi::c_char);
+            apr_sys::apr_pool_clear_debug(self.raw, location.as_ptr() as *const core::ffi::c_char);
         }
     }
 
@@ -230,14 +232,14 @@ impl<'pool> Pool<'pool> {
     /// # Safety
     ///
     /// The pointer must be a valid pointer that was allocated from an APR pool.
-    pub unsafe fn find(&self, ptr: *const std::ffi::c_void) -> Option<Pool> {
+    pub unsafe fn find(&self, ptr: *const core::ffi::c_void) -> Option<Pool> {
         let pool = apr_sys::apr_pool_find(ptr);
         if pool.is_null() {
             None
         } else {
             Some(Pool {
                 raw: pool,
-                _marker: std::marker::PhantomData,
+                _marker: core::marker::PhantomData,
             })
         }
     }
@@ -259,19 +261,19 @@ impl Drop for Pool<'_> {
 pub struct Allocator {
     raw: *mut apr_sys::apr_allocator_t,
     // Allocators are not Send or Sync
-    _no_send: std::marker::PhantomData<*mut ()>,
+    _no_send: core::marker::PhantomData<*mut ()>,
 }
 
 impl Allocator {
     /// Create a new allocator.
     pub fn new() -> Self {
-        let mut allocator: *mut apr_sys::apr_allocator_t = std::ptr::null_mut();
+        let mut allocator: *mut apr_sys::apr_allocator_t = core::ptr::null_mut();
         unsafe {
             apr_sys::apr_allocator_create(&mut allocator);
         }
         Allocator {
             raw: allocator,
-            _no_send: std::marker::PhantomData,
+            _no_send: core::marker::PhantomData,
         }
     }
 
@@ -424,13 +426,13 @@ impl<'pool> PoolHandle<'pool> {
     /// // subpool is owned and will be destroyed when dropped
     /// ```
     pub fn subpool(&self) -> Pool<'static> {
-        let mut subpool: *mut apr_sys::apr_pool_t = std::ptr::null_mut();
+        let mut subpool: *mut apr_sys::apr_pool_t = core::ptr::null_mut();
         unsafe {
             apr_sys::apr_pool_create_ex(
                 &mut subpool,
                 self.as_mut_ptr(),
                 None,
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
             );
             Pool::from_raw(subpool)
         }
@@ -682,6 +684,7 @@ pub unsafe fn terminate() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[test]
     fn test_pool() {

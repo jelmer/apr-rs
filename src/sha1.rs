@@ -1,8 +1,10 @@
 //! SHA1 hashing functionality from apr-util.
 
 use crate::pool::Pool;
-use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use alloc::format;
+use alloc::string::String;
+use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 
 /// SHA1 context for incremental hashing.
 pub struct Sha1Context<'pool> {
@@ -29,8 +31,8 @@ impl<'pool> Sha1Context<'pool> {
         unsafe {
             apr_sys::apr_sha1_update(
                 &mut self.ctx,
-                data.as_ptr() as *const std::os::raw::c_char,
-                data.len() as std::os::raw::c_uint,
+                data.as_ptr() as *const core::ffi::c_char,
+                data.len() as core::ffi::c_uint,
             );
         }
     }
@@ -40,8 +42,8 @@ impl<'pool> Sha1Context<'pool> {
         unsafe {
             apr_sys::apr_sha1_update_binary(
                 &mut self.ctx,
-                data.as_ptr() as *const std::os::raw::c_uchar,
-                data.len() as std::os::raw::c_uint,
+                data.as_ptr() as *const core::ffi::c_uchar,
+                data.len() as core::ffi::c_uint,
             );
         }
     }

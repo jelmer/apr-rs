@@ -1,8 +1,8 @@
 //! Random number generation
 
 use crate::{pool::Pool, Result};
-use std::marker::PhantomData;
-use std::ptr;
+use core::marker::PhantomData;
+use core::ptr;
 
 #[repr(transparent)]
 pub struct Random<'a> {
@@ -30,7 +30,7 @@ impl<'a> Random<'a> {
         let status = unsafe {
             apr_sys::apr_random_add_entropy(
                 self.raw,
-                entropy.as_ptr() as *const std::ffi::c_void,
+                entropy.as_ptr() as *const core::ffi::c_void,
                 entropy.len(),
             )
         };
@@ -45,7 +45,7 @@ impl<'a> Random<'a> {
         let status = unsafe {
             apr_sys::apr_random_secure_bytes(
                 self.raw,
-                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                buf.as_mut_ptr() as *mut core::ffi::c_void,
                 buf.len(),
             )
         };
@@ -60,7 +60,7 @@ impl<'a> Random<'a> {
         let status = unsafe {
             apr_sys::apr_random_insecure_bytes(
                 self.raw,
-                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                buf.as_mut_ptr() as *mut core::ffi::c_void,
                 buf.len(),
             )
         };
