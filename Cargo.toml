@@ -3,7 +3,7 @@ members = [".", "apr-sys"]
 
 [package]
 name = "apr"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@apache.org>"]
 repository = "https://github.com/jelmer/apr-rs.git"
