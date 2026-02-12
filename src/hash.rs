@@ -2,8 +2,8 @@
 
 use crate::pool::Pool;
 pub use apr_sys::apr_hash_t;
-use std::ffi::c_void;
-use std::marker::PhantomData;
+use core::ffi::c_void;
+use core::marker::PhantomData;
 
 /// A hash table that stores byte slices as keys and raw pointers as values.
 ///
@@ -74,7 +74,7 @@ impl<'pool> Hash<'pool> {
                 self.ptr,
                 key.as_ptr() as *const c_void,
                 key.len() as apr_sys::apr_ssize_t,
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
             );
         }
     }
@@ -99,7 +99,7 @@ impl<'pool> Hash<'pool> {
     /// Create an iterator over the hash table entries.
     pub fn iter(&self) -> HashIter<'pool> {
         HashIter {
-            index: unsafe { apr_sys::apr_hash_first(std::ptr::null_mut(), self.ptr) },
+            index: unsafe { apr_sys::apr_hash_first(core::ptr::null_mut(), self.ptr) },
             _phantom: PhantomData,
         }
     }
@@ -135,9 +135,9 @@ impl<'pool> Iterator for HashIter<'pool> {
             return None;
         }
 
-        let mut key = std::ptr::null();
+        let mut key = core::ptr::null();
         let mut key_len: apr_sys::apr_ssize_t = 0;
-        let mut val: *mut c_void = std::ptr::null_mut();
+        let mut val: *mut c_void = core::ptr::null_mut();
 
         unsafe {
             apr_sys::apr_hash_this(
@@ -161,7 +161,7 @@ impl<'pool> Iterator for HashIter<'pool> {
                     len
                 );
             }
-            unsafe { std::slice::from_raw_parts(key as *const u8, len) }
+            unsafe { core::slice::from_raw_parts(key as *const u8, len) }
         };
 
         Some((key, val))
@@ -298,7 +298,7 @@ impl<'pool, V: 'pool> Iterator for TypedHashIter<'pool, V> {
 pub fn hash_default(key: &[u8]) -> u32 {
     unsafe {
         let mut len = key.len() as apr_sys::apr_ssize_t;
-        apr_sys::apr_hashfunc_default(key.as_ptr() as *const std::ffi::c_char, &mut len)
+        apr_sys::apr_hashfunc_default(key.as_ptr() as *const core::ffi::c_char, &mut len)
     }
 }
 
@@ -381,6 +381,9 @@ impl<'pool, 'a, V: 'pool> Extend<(&'a [u8], &'pool V)> for TypedHash<'pool, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::{String, ToString};
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_hash_basic_operations() {

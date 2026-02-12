@@ -40,7 +40,7 @@ pub fn path_to_cstring<'a, P: AsRef<Path>>(
 ///
 /// # Safety
 /// The ptr must be a valid null-terminated C string
-pub unsafe fn cstring_to_pathbuf(ptr: *const std::ffi::c_char) -> PathBuf {
+pub unsafe fn cstring_to_pathbuf(ptr: *const core::ffi::c_char) -> PathBuf {
     if ptr.is_null() {
         return PathBuf::new();
     }
@@ -66,9 +66,9 @@ pub fn normalize_path<P: AsRef<Path>>(path: P, pool: &Pool<'_>) -> Result<PathBu
     let path_cstr = path_to_cstring(path, pool)?;
 
     unsafe {
-        let mut normalized_ptr: *const std::ffi::c_char = std::ptr::null();
+        let mut normalized_ptr: *const core::ffi::c_char = std::ptr::null();
         let status = apr_sys::apr_filepath_merge(
-            &mut normalized_ptr as *mut _ as *mut *mut std::ffi::c_char,
+            &mut normalized_ptr as *mut _ as *mut *mut core::ffi::c_char,
             std::ptr::null(), // No root path
             path_cstr.as_ptr(),
             apr_sys::APR_FILEPATH_SECUREROOT as i32,
@@ -102,9 +102,9 @@ pub fn join_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
     let path_cstr = path_to_cstring(path, pool)?;
 
     unsafe {
-        let mut joined_ptr: *const std::ffi::c_char = std::ptr::null();
+        let mut joined_ptr: *const core::ffi::c_char = std::ptr::null();
         let status = apr_sys::apr_filepath_merge(
-            &mut joined_ptr as *mut _ as *mut *mut std::ffi::c_char,
+            &mut joined_ptr as *mut _ as *mut *mut core::ffi::c_char,
             base_cstr.as_ptr(),
             path_cstr.as_ptr(),
             0, // No special flags
@@ -119,7 +119,7 @@ pub fn join_paths<P1: AsRef<Path>, P2: AsRef<Path>>(
 /// Get the current working directory
 pub fn get_cwd(pool: &Pool<'_>) -> Result<PathBuf, Status> {
     unsafe {
-        let mut cwd_ptr: *mut std::ffi::c_char = std::ptr::null_mut();
+        let mut cwd_ptr: *mut core::ffi::c_char = std::ptr::null_mut();
         let status = apr_sys::apr_filepath_get(
             &mut cwd_ptr,
             0, // No special flags

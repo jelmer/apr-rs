@@ -1,12 +1,16 @@
 //! Improved error handling for APR operations
 use crate::status::Status;
-use std::fmt;
+#[cfg(feature = "std")]
+use alloc::boxed::Box;
+use alloc::string::String;
+use core::fmt;
 
 /// High-level error type that wraps Status with additional context
 #[derive(Debug)]
 pub struct Error {
     status: Status,
     context: Option<String>,
+    #[cfg(feature = "std")]
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
@@ -16,6 +20,7 @@ impl Error {
         Error {
             status,
             context: None,
+            #[cfg(feature = "std")]
             source: None,
         }
     }
@@ -27,6 +32,7 @@ impl Error {
     }
 
     /// Add a source error
+    #[cfg(feature = "std")]
     pub fn with_source<E: std::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
         self.source = Some(Box::new(source));
         self
@@ -48,6 +54,7 @@ impl fmt::Display for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.source
@@ -62,26 +69,27 @@ impl From<Status> for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::from_status(Status::General).with_source(err)
     }
 }
 
-impl From<std::ffi::NulError> for Error {
-    fn from(err: std::ffi::NulError) -> Self {
-        Error::from_status(Status::BadArgument).with_source(err)
+impl From<core::ffi::c_str::FromBytesWithNulError> for Error {
+    fn from(_err: core::ffi::c_str::FromBytesWithNulError) -> Self {
+        Error::from_status(Status::BadArgument)
     }
 }
 
-impl From<std::str::Utf8Error> for Error {
-    fn from(err: std::str::Utf8Error) -> Self {
-        Error::from_status(Status::BadArgument).with_source(err)
+impl From<core::str::Utf8Error> for Error {
+    fn from(_err: core::str::Utf8Error) -> Self {
+        Error::from_status(Status::BadArgument)
     }
 }
 
 /// Result type using the improved Error
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// Extension trait to add context to Results
 pub trait ErrorContext<T> {
@@ -95,7 +103,7 @@ pub trait ErrorContext<T> {
         S: Into<String>;
 }
 
-impl<T, E> ErrorContext<T> for std::result::Result<T, E>
+impl<T, E> ErrorContext<T> for core::result::Result<T, E>
 where
     E: Into<Error>,
 {
@@ -115,6 +123,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[test]
     fn test_error_from_status() {
@@ -134,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_error_context_trait() {
-        let result: std::result::Result<(), Status> = Err(Status::NotFound);
+        let result: core::result::Result<(), Status> = Err(Status::NotFound);
         let err = result.context("File operation failed").unwrap_err();
 
         assert!(format!("{}", err).contains("File operation failed"));

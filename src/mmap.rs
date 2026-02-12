@@ -1,9 +1,9 @@
 //! Memory-mapped file operations
 
 use crate::{pool::Pool, Result};
-use std::marker::PhantomData;
-use std::ptr;
-use std::slice;
+use core::marker::PhantomData;
+use core::ptr;
+use core::slice;
 
 /// Memory-mapped file
 pub struct Mmap<'a> {
@@ -138,7 +138,7 @@ impl<'a> Drop for Mmap<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::file::{File, OpenFlags};

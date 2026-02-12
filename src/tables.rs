@@ -4,9 +4,11 @@
 //! (dynamic arrays) data structures.
 
 use crate::pool::Pool;
+use alloc::ffi::CString;
+use alloc::string::String;
 pub use apr_sys::{apr_array_header_t, apr_table_t};
-use std::ffi::{c_char, c_void, CStr, CString};
-use std::marker::PhantomData;
+use core::ffi::{c_char, c_void, CStr};
+use core::marker::PhantomData;
 
 /// A dynamic array that stores raw data.
 ///
@@ -49,7 +51,7 @@ impl<'pool> Array<'pool> {
     /// The bytes must be exactly `elt_size` bytes (as specified in `new`).
     pub unsafe fn push_raw(&mut self, data: &[u8]) {
         let dst = apr_sys::apr_array_push(self.ptr);
-        std::ptr::copy_nonoverlapping(data.as_ptr(), dst as *mut u8, data.len());
+        core::ptr::copy_nonoverlapping(data.as_ptr(), dst as *mut u8, data.len());
     }
 
     /// Get a pointer to an element at the given index.
@@ -109,7 +111,7 @@ impl<'pool, T: Copy> TypedArray<'pool, T> {
     /// Create a new typed array.
     pub fn new(pool: &'pool Pool<'pool>, initial_size: i32) -> Self {
         Self {
-            inner: Array::new(pool, initial_size, std::mem::size_of::<T>() as i32),
+            inner: Array::new(pool, initial_size, core::mem::size_of::<T>() as i32),
             _phantom: PhantomData,
         }
     }
@@ -131,9 +133,9 @@ impl<'pool, T: Copy> TypedArray<'pool, T> {
     /// Push a value onto the array.
     pub fn push(&mut self, value: T) {
         unsafe {
-            let bytes = std::slice::from_raw_parts(
+            let bytes = core::slice::from_raw_parts(
                 &value as *const T as *const u8,
-                std::mem::size_of::<T>(),
+                core::mem::size_of::<T>(),
             );
             self.inner.push_raw(bytes);
         }
@@ -451,12 +453,12 @@ impl<'a, 'pool> Iterator for StringTableIter<'a, 'pool> {
 
             // APR table entries are stored as pairs of char* pointers
             // Each entry has: key, val, key_checksum (but we only need key and val)
-            let entry_size = std::mem::size_of::<(*const c_char, *const c_char, u32)>();
+            let entry_size = core::mem::size_of::<(*const c_char, *const c_char, u32)>();
             let entry_ptr = (header.elts as *const u8).add(self.index * entry_size);
 
             let key_ptr = *(entry_ptr as *const *const c_char);
             let val_ptr =
-                *(entry_ptr.add(std::mem::size_of::<*const c_char>()) as *const *const c_char);
+                *(entry_ptr.add(core::mem::size_of::<*const c_char>()) as *const *const c_char);
 
             self.index += 1;
 
@@ -511,11 +513,14 @@ impl<'pool, 'a> Extend<(&'a str, &'a str)> for StringTable<'pool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_array_basic() {
         let pool = Pool::new();
-        let mut array = Array::new(&pool, 10, std::mem::size_of::<i32>() as i32);
+        let mut array = Array::new(&pool, 10, core::mem::size_of::<i32>() as i32);
 
         assert!(array.is_empty());
 

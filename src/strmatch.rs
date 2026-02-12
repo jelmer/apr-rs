@@ -4,8 +4,9 @@
 //! like Boyer-Moore.
 
 use crate::pool::Pool;
-use std::ffi::CString;
-use std::marker::PhantomData;
+use alloc::ffi::CString;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 /// A precompiled string pattern for efficient matching.
 pub struct StrMatch<'pool> {
@@ -147,6 +148,7 @@ pub fn find_all(pattern: &StrMatch, haystack: &str) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[test]
     fn test_strmatch_find() {
@@ -157,10 +159,9 @@ mod tests {
             let result2 = pattern.find("world hello world");
             let result3 = pattern.find("hello");
 
-            // APR string matching may not work as expected, just ensure it doesn't crash
-            println!("Pattern 'world' in 'hello world': {:?}", result1);
-            println!("Pattern 'world' in 'world hello world': {:?}", result2);
-            println!("Pattern 'world' in 'hello': {:?}", result3);
+            assert_eq!(result1, Some(6));
+            assert_eq!(result2, Some(0));
+            assert_eq!(result3, None);
         }
     }
 

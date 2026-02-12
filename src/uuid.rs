@@ -1,9 +1,11 @@
 //! UUID generation functionality from apr-util.
 
 use crate::{Error, Status};
-use std::ffi::c_char;
-use std::ffi::CStr;
-use std::fmt;
+use alloc::string::String;
+use alloc::vec;
+use core::ffi::c_char;
+use core::ffi::CStr;
+use core::fmt;
 
 /// A universally unique identifier (UUID).
 #[derive(Clone, Copy)]
@@ -26,7 +28,7 @@ impl Uuid {
     /// The string should be in the standard format:
     /// "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
     pub fn parse(s: &str) -> Result<Self, Error> {
-        let c_str = std::ffi::CString::new(s)
+        let c_str = alloc::ffi::CString::new(s)
             .map_err(|_| Error::from_status(Status::from(apr_sys::APR_EINVAL as i32)))?;
 
         let mut uuid = apr_sys::apr_uuid_t { data: [0; 16] };
@@ -71,8 +73,8 @@ impl PartialEq for Uuid {
 
 impl Eq for Uuid {}
 
-impl std::hash::Hash for Uuid {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl core::hash::Hash for Uuid {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.uuid.data.hash(state);
     }
 }
@@ -95,7 +97,7 @@ impl fmt::Debug for Uuid {
     }
 }
 
-impl std::str::FromStr for Uuid {
+impl core::str::FromStr for Uuid {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -106,7 +108,9 @@ impl std::str::FromStr for Uuid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
+    use alloc::collections::BTreeSet;
+    use alloc::format;
+    use alloc::string::ToString;
 
     #[test]
     fn test_uuid_generate() {
@@ -172,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_uuid_uniqueness() {
-        let mut uuids = HashSet::new();
+        let mut uuids = BTreeSet::new();
         for _ in 0..100 {
             let uuid = Uuid::new();
             assert!(uuids.insert(uuid.format()));

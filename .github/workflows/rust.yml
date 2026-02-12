@@ -38,3 +38,7 @@ jobs:
       run: cargo test --verbose
     - name: Run tests with all features
       run: cargo test --all-features --verbose
+    - name: Build without std (no_std check)
+      run: cargo build --no-default-features --verbose
+    - name: Test without std (no_std check)
+      run: cargo test --no-default-features --verbose

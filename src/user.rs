@@ -1,10 +1,13 @@
 //! User and group information access
+use alloc::vec::Vec;
+use alloc::string::String;
 
 use crate::{pool::Pool, Result};
-use std::ffi::{CStr, CString};
-use std::ffi::c_char;
-use std::marker::PhantomData;
-use std::ptr;
+use alloc::ffi::CString;
+use core::ffi::CStr;
+use core::ffi::c_char;
+use core::marker::PhantomData;
+use core::ptr;
 
 #[repr(transparent)]
 pub struct UserInfo<'a> {

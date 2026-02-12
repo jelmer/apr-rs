@@ -4,10 +4,13 @@
 
 use crate::pool::Pool;
 use crate::{Error, Status};
-use std::ffi::c_char;
-use std::ffi::CString;
-use std::marker::PhantomData;
-use std::ptr;
+use alloc::ffi::CString;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ffi::c_char;
+use core::marker::PhantomData;
+use core::ptr;
 
 /// Character set translation handle.
 pub struct Xlate<'pool> {

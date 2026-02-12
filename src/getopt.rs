@@ -1,6 +1,9 @@
 //! Command line option parsing.
 use crate::pool::Pool;
-use std::marker::PhantomData;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 /// A trait for types that can be converted into a sequence of allowed option characters.
 pub trait IntoAllowedOptionChars {
@@ -9,13 +12,13 @@ pub trait IntoAllowedOptionChars {
 }
 
 impl IntoAllowedOptionChars for &str {
-    fn into_iter(self) -> impl std::iter::Iterator<Item = char> {
+    fn into_iter(self) -> impl core::iter::Iterator<Item = char> {
         self.chars().collect::<Vec<_>>().into_iter()
     }
 }
 
 impl IntoAllowedOptionChars for &[char] {
-    fn into_iter(self) -> impl std::iter::Iterator<Item = char> {
+    fn into_iter(self) -> impl core::iter::Iterator<Item = char> {
         self.iter().copied()
     }
 }
@@ -68,10 +71,10 @@ impl<'pool> Option<'pool> {
         name: &str,
         has_arg: bool,
         indicator: Indicator,
-        description: std::option::Option<&'pool str>,
+        description: core::option::Option<&'pool str>,
     ) -> Self {
-        let name = std::ffi::CString::new(name).unwrap();
-        let description = description.map(|s| std::ffi::CString::new(s).unwrap());
+        let name = alloc::ffi::CString::new(name).unwrap();
+        let description = description.map(|s| alloc::ffi::CString::new(s).unwrap());
 
         let option = pool.calloc::<apr_sys::apr_getopt_option_t>();
         unsafe {
@@ -93,7 +96,7 @@ impl<'pool> Option<'pool> {
     pub fn name(&self) -> &str {
         unsafe {
             let name = (*self.ptr).name;
-            std::ffi::CStr::from_ptr(name).to_str().unwrap()
+            core::ffi::CStr::from_ptr(name).to_str().unwrap()
         }
     }
 
@@ -103,7 +106,7 @@ impl<'pool> Option<'pool> {
     }
 
     /// Returns the character code of the option.
-    pub fn optch(&self) -> std::option::Option<u8> {
+    pub fn optch(&self) -> core::option::Option<u8> {
         unsafe {
             let v = (*self.ptr).optch;
             if v > 255 {
@@ -118,7 +121,7 @@ impl<'pool> Option<'pool> {
     pub fn description(&self) -> &str {
         unsafe {
             let description = (*self.ptr).description;
-            std::ffi::CStr::from_ptr(description).to_str().unwrap()
+            core::ffi::CStr::from_ptr(description).to_str().unwrap()
         }
     }
 
@@ -142,7 +145,7 @@ pub struct Getopt<'pool> {
 /// The result of parsing a command line option.
 pub enum GetoptResult {
     /// An option.
-    Option(Indicator, std::option::Option<String>),
+    Option(Indicator, core::option::Option<String>),
 
     /// A missing argument.
     MissingArgument(char),
@@ -157,13 +160,13 @@ pub enum GetoptResult {
 impl Getopt<'_> {
     /// Create a new `Getopt` instance.
     pub fn new(args: &[&str]) -> Result<Self, crate::Status> {
-        let mut os = std::ptr::null_mut();
+        let mut os = core::ptr::null_mut();
         let pool = crate::pool::Pool::new();
 
         let argv = args
             .iter()
             .map(|s| {
-                let s = std::ffi::CString::new(*s).unwrap();
+                let s = alloc::ffi::CString::new(*s).unwrap();
                 unsafe { apr_sys::apr_pstrdup(pool.as_mut_ptr(), s.as_ptr()) }
             })
             .collect::<Vec<_>>();
@@ -192,9 +195,9 @@ impl Getopt<'_> {
     pub fn args(&self) -> Vec<&str> {
         unsafe {
             let args = (*self.ptr).argv;
-            let args = std::slice::from_raw_parts(args, (*self.ptr).argc as usize);
+            let args = core::slice::from_raw_parts(args, (*self.ptr).argc as usize);
             args.iter()
-                .map(|&s| std::ffi::CStr::from_ptr(s).to_str().unwrap())
+                .map(|&s| core::ffi::CStr::from_ptr(s).to_str().unwrap())
                 .collect::<Vec<_>>()
         }
     }
@@ -222,11 +225,11 @@ impl Getopt<'_> {
 
     /// Parse a command line option.
     pub fn getopt(&mut self, opts: impl IntoAllowedOptionChars) -> GetoptResult {
-        let mut opts: Vec<std::ffi::c_char> =
-            opts.into_iter().map(|c| c as std::ffi::c_char).collect();
+        let mut opts: Vec<core::ffi::c_char> =
+            opts.into_iter().map(|c| c as core::ffi::c_char).collect();
         opts.push(0);
         let mut option_ch = 0;
-        let mut option_arg: *const std::ffi::c_char = std::ptr::null_mut();
+        let mut option_arg: *const core::ffi::c_char = core::ptr::null_mut();
 
         let rv = unsafe {
             apr_sys::apr_getopt(
@@ -244,7 +247,7 @@ impl Getopt<'_> {
                     None
                 } else {
                     Some(
-                        unsafe { std::ffi::CStr::from_ptr(option_arg) }
+                        unsafe { core::ffi::CStr::from_ptr(option_arg) }
                             .to_str()
                             .unwrap()
                             .to_owned(),
@@ -262,7 +265,7 @@ impl Getopt<'_> {
     /// Parse a long command line option.
     pub fn getopt_long(&mut self, opts: &[Option]) -> GetoptResult {
         let mut option_ch: i32 = 0;
-        let mut option_arg: *const std::ffi::c_char = std::ptr::null();
+        let mut option_arg: *const core::ffi::c_char = core::ptr::null();
         let mut opts = opts
             .iter()
             .map(|o| o.as_ptr())
@@ -270,10 +273,10 @@ impl Getopt<'_> {
             .collect::<Vec<_>>();
         // sentinel
         opts.push(apr_sys::apr_getopt_option_t {
-            name: std::ptr::null(),
+            name: core::ptr::null(),
             has_arg: 0,
             optch: 0,
-            description: std::ptr::null(),
+            description: core::ptr::null(),
         });
 
         let rv = unsafe {
@@ -291,7 +294,7 @@ impl Getopt<'_> {
                     None
                 } else {
                     Some(
-                        unsafe { std::ffi::CStr::from_ptr(option_arg) }
+                        unsafe { core::ffi::CStr::from_ptr(option_arg) }
                             .to_str()
                             .unwrap()
                             .to_owned(),
@@ -319,6 +322,10 @@ impl Getopt<'_> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::borrow::ToOwned;
+    use alloc::string::ToString;
+    use alloc::vec;
+
     #[test]
     fn test_getopt_long() {
         let pool = crate::pool::Pool::new();
