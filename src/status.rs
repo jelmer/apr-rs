@@ -110,10 +110,11 @@ impl Status {
 
     /// Get the raw OS error code, if available
     pub fn raw_os_error(&self) -> Option<i32> {
+        let status_code: u32 = (*self).into();
         match self {
             Status::Success => None,
-            e if (*e) as u32 >= apr_sys::APR_OS_START_SYSERR => {
-                Some((*e as u32 - apr_sys::APR_OS_START_SYSERR) as i32)
+            _ if status_code >= apr_sys::APR_OS_START_SYSERR => {
+                Some((status_code - apr_sys::APR_OS_START_SYSERR) as i32)
             }
             _ => None,
         }
@@ -121,10 +122,11 @@ impl Status {
 
     /// Get the error message for this status code
     pub fn strerror(&self) -> String {
+        let status_code: u32 = (*self).into();
         let buf = unsafe {
             let mut buf = [0u8; 1024];
             apr_sys::apr_strerror(
-                *self as apr_sys::apr_status_t,
+                status_code as apr_sys::apr_status_t,
                 buf.as_mut_ptr() as *mut std::ffi::c_char,
                 buf.len(),
             );
@@ -192,7 +194,8 @@ impl From<u32> for Status {
 
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{} ({})", self.strerror(), *self as u32)
+        let status_code: u32 = (*self).into();
+        write!(f, "{} ({})", self.strerror(), status_code)
     }
 }
 
@@ -200,7 +203,52 @@ impl std::error::Error for Status {}
 
 impl From<Status> for u32 {
     fn from(status: Status) -> Self {
-        status as u32
+        match status {
+            Status::Success => apr_sys::APR_SUCCESS,
+            Status::NoStat => apr_sys::APR_ENOSTAT,
+            Status::NoPool => apr_sys::APR_ENOPOOL,
+            Status::BadDate => apr_sys::APR_EBADDATE,
+            Status::InvalidSocket => apr_sys::APR_EINVALSOCK,
+            Status::NoProcess => apr_sys::APR_ENOPROC,
+            Status::NoTime => apr_sys::APR_ENOTIME,
+            Status::NoDirectory => apr_sys::APR_ENODIR,
+            Status::NoLock => apr_sys::APR_ENOLOCK,
+            Status::NoPoll => apr_sys::APR_ENOPOLL,
+            Status::NoSocket => apr_sys::APR_ENOSOCKET,
+            Status::NoThread => apr_sys::APR_ENOTHREAD,
+            Status::NoThreadKey => apr_sys::APR_ENOTHDKEY,
+            Status::NoSharedMemoryAvailable => apr_sys::APR_ENOSHMAVAIL,
+            Status::DSOOpen => apr_sys::APR_EDSOOPEN,
+            Status::General => apr_sys::APR_EGENERAL,
+            Status::BadIpAddress => apr_sys::APR_EBADIP,
+            Status::BadMask => apr_sys::APR_EBADMASK,
+            Status::SymbolNotFound => apr_sys::APR_ESYMNOTFOUND,
+            Status::NotEnoughEntropy => apr_sys::APR_ENOTENOUGHENTROPY,
+            Status::InChild => apr_sys::APR_INCHILD,
+            Status::InParent => apr_sys::APR_INPARENT,
+            Status::Detach => apr_sys::APR_DETACH,
+            Status::NotDetach => apr_sys::APR_NOTDETACH,
+            Status::ChildDone => apr_sys::APR_CHILD_DONE,
+            Status::ChildNotDone => apr_sys::APR_CHILD_NOTDONE,
+            Status::TimeUp => apr_sys::APR_TIMEUP,
+            Status::Incomplete => apr_sys::APR_INCOMPLETE,
+            Status::BadCh => apr_sys::APR_BADCH,
+            Status::BadArgument => apr_sys::APR_BADARG,
+            Status::Eof => apr_sys::APR_EOF,
+            Status::NotFound => apr_sys::APR_NOTFOUND,
+            Status::Anonymous => apr_sys::APR_ANONYMOUS,
+            Status::FileBased => apr_sys::APR_FILEBASED,
+            Status::KeyBased => apr_sys::APR_KEYBASED,
+            Status::Initializer => apr_sys::APR_EINIT,
+            Status::NotImplemented => apr_sys::APR_ENOTIMPL,
+            Status::Mismatch => apr_sys::APR_EMISMATCH,
+            Status::Absolute => apr_sys::APR_EABSOLUTE,
+            Status::Relative => apr_sys::APR_ERELATIVE,
+            Status::IncompleteError => apr_sys::APR_EINCOMPLETE,
+            Status::AboveRoot => apr_sys::APR_EABOVEROOT,
+            Status::Busy => apr_sys::APR_EBUSY,
+            Status::ProcessUnknown => apr_sys::APR_EPROC_UNKNOWN,
+        }
     }
 }
 
@@ -246,5 +294,50 @@ pub fn apr_result(status_code: i32) -> Result<(), Status> {
         Ok(())
     } else {
         Err(Status::from(status_code))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_to_u32_returns_apr_value() {
+        // Test that converting Status to u32 returns the actual APR constant value,
+        // not the enum discriminant
+        let status = Status::Success;
+        let code: u32 = status.into();
+        assert_eq!(code, apr_sys::APR_SUCCESS);
+
+        let status = Status::NotFound;
+        let code: u32 = status.into();
+        assert_eq!(code, apr_sys::APR_NOTFOUND);
+
+        let status = Status::Eof;
+        let code: u32 = status.into();
+        assert_eq!(code, apr_sys::APR_EOF);
+    }
+
+    #[test]
+    fn test_status_roundtrip() {
+        // Test that we can convert from APR constant to Status and back
+        let original = apr_sys::APR_ENOSTAT;
+        let status = Status::from(original);
+        let code: u32 = status.into();
+        assert_eq!(code, original);
+
+        let original = apr_sys::APR_BADARG;
+        let status = Status::from(original);
+        let code: u32 = status.into();
+        assert_eq!(code, original);
+    }
+
+    #[test]
+    fn test_status_display_uses_correct_value() {
+        // Verify that Display shows the correct APR status code
+        let status = Status::NotFound;
+        let display = format!("{}", status);
+        // Should contain the APR_NOTFOUND value, not the discriminant
+        assert!(display.contains(&format!("({})", apr_sys::APR_NOTFOUND)));
     }
 }
