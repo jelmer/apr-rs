@@ -21,7 +21,9 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Install apr
-      run: sudo apt install -y libapr1-dev libaprutil1-dev libutf8proc-dev
+      run: |
+        sudo apt -y update
+        sudo apt install -y libapr1-dev libaprutil1-dev libutf8proc-dev
       if: "matrix.os == 'ubuntu-latest'"
     - name: Install apr (Mac OS)
       run: |
