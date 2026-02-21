@@ -272,6 +272,22 @@ impl<'pool, V> TypedHash<'pool, V> {
             _phantom: PhantomData,
         }
     }
+
+    /// Get a const pointer to the underlying APR hash.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_ptr(&self) -> *const apr_hash_t {
+        self.inner.as_ptr()
+    }
+
+    /// Get a mutable pointer to the underlying APR hash.
+    ///
+    /// # Safety
+    /// The caller must ensure proper usage of the raw pointer.
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut apr_hash_t {
+        self.inner.as_mut_ptr()
+    }
 }
 
 /// Iterator for TypedHash.
