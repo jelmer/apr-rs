@@ -85,6 +85,23 @@ fn create_bindings(
         .allowlist_file(".*/apr_queue.h")
         .allowlist_file(".*/apr_portable.h")
         .allowlist_file(".*/apr_support.h")
+        // Explicitly allowlist fundamental APR types that may be defined via
+        // typedef chains through system headers. On some platforms (e.g. EL9),
+        // bindgen may attribute these to system headers rather than apr.h,
+        // causing them to be filtered out by the allowlist_file rules above.
+        .allowlist_type("apr_int16_t")
+        .allowlist_type("apr_uint16_t")
+        .allowlist_type("apr_int32_t")
+        .allowlist_type("apr_uint32_t")
+        .allowlist_type("apr_int64_t")
+        .allowlist_type("apr_uint64_t")
+        .allowlist_type("apr_size_t")
+        .allowlist_type("apr_ssize_t")
+        .allowlist_type("apr_off_t")
+        .allowlist_type("apr_socklen_t")
+        .allowlist_type("apr_ino_t")
+        .allowlist_type("apr_uintptr_t")
+        .allowlist_type("apr_intptr_t")
         .clang_args(
             apr_include_paths
                 .iter()
