@@ -47,8 +47,14 @@ fn create_bindings(
         .header(apu_path.join("apr_xml.h").to_str().unwrap())
         .header(apu_path.join("apr_crypto.h").to_str().unwrap())
         .header(apu_path.join("apr_queue.h").to_str().unwrap())
-        .header_contents("sys_socket.h", "#include <sys/socket.h>")
-        .header_contents("sys_types.h", "#include <sys/types.h>")
+        .header_contents(
+            "platform_headers.h",
+            if cfg!(windows) {
+                "#include <winsock2.h>\n#include <ws2tcpip.h>"
+            } else {
+                "#include <sys/socket.h>\n#include <sys/types.h>"
+            },
+        )
         .allowlist_file(".*/apr.h")
         .allowlist_file(".*/apr_general.h")
         .allowlist_file(".*/apr_allocator.h")
