@@ -44,6 +44,7 @@ jobs:
         echo "SYSTEM_DEPS_APR_UTIL_1_INCLUDE=$prefix\include" >> $env:GITHUB_ENV
         echo "SYSTEM_DEPS_APR_UTIL_1_SEARCH_NATIVE=$prefix\lib" >> $env:GITHUB_ENV
         echo "SYSTEM_DEPS_APR_UTIL_1_LIB=libaprutil-1" >> $env:GITHUB_ENV
+        echo "$prefix\bin" >> $env:GITHUB_PATH
       if: "matrix.os == 'windows-latest'"
     - name: Build
       run: cargo build --verbose
