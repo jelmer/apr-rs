@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn test_proc_mutex_with_file() {
         let pool = Pool::new();
-        let temp_path = PathBuf::from("/tmp/apr_test_proc_mutex");
+        let temp_path = std::env::temp_dir().join("apr_test_proc_mutex");
         
         let mutex = ProcMutex::new(Some(&temp_path), LockMech::Default, &pool);
         // This might fail on some systems, which is expected
