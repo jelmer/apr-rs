@@ -459,8 +459,9 @@ mod tests {
         let pool = Pool::new();
 
         let template = std::env::temp_dir().join("apr_temp_XXXXXX");
+        let template = template.to_str().unwrap().replace('\\', "/");
         let mut temp_file = File::temp_file(
-            template.to_str().unwrap(),
+            &template,
             OpenFlags::combine(&[OpenFlags::READ, OpenFlags::WRITE]),
             &pool,
         )
