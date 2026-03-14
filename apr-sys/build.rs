@@ -55,42 +55,42 @@ fn create_bindings(
                 "#include <sys/socket.h>\n#include <sys/types.h>"
             },
         )
-        .allowlist_file(".*/apr.h")
-        .allowlist_file(".*/apr_general.h")
-        .allowlist_file(".*/apr_allocator.h")
-        .allowlist_file(".*/apr_version.h")
-        .allowlist_file(".*/apr_errno.h")
-        .allowlist_file(".*/apr_pools.h")
-        .allowlist_file(".*/apr_tables.h")
-        .allowlist_file(".*/apr_hash.h")
-        .allowlist_file(".*/apr_file_info.h")
-        .allowlist_file(".*/apr_file_io.h")
-        .allowlist_file(".*/apr_getopt.h")
-        .allowlist_file(".*/apr_uri.h")
-        .allowlist_file(".*/apr_time.h")
-        .allowlist_file(".*/apr_date.h")
-        .allowlist_file(".*/apr_strings.h")
-        .allowlist_file(".*/apr_version.h")
-        .allowlist_file(".*/apu_version.h")
-        .allowlist_file(".*/apr_thread_proc.h")
-        .allowlist_file(".*/apr_thread_mutex.h")
-        .allowlist_file(".*/apr_thread_cond.h")
-        .allowlist_file(".*/apr_dso.h")
-        .allowlist_file(".*/apr_env.h")
-        .allowlist_file(".*/apr_network_io.h")
-        .allowlist_file(".*/apr_mmap.h")
-        .allowlist_file(".*/apr_user.h")
-        .allowlist_file(".*/apr_md5.h")
-        .allowlist_file(".*/apr_sha1.h")
-        .allowlist_file(".*/apr_base64.h")
-        .allowlist_file(".*/apr_uuid.h")
-        .allowlist_file(".*/apr_strmatch.h")
-        .allowlist_file(".*/apr_xlate.h")
-        .allowlist_file(".*/apr_xml.h")
-        .allowlist_file(".*/apr_crypto.h")
-        .allowlist_file(".*/apr_queue.h")
-        .allowlist_file(".*/apr_portable.h")
-        .allowlist_file(".*/apr_support.h")
+        .allowlist_file(".*[/\\\\]apr.h")
+        .allowlist_file(".*[/\\\\]apr_general.h")
+        .allowlist_file(".*[/\\\\]apr_allocator.h")
+        .allowlist_file(".*[/\\\\]apr_version.h")
+        .allowlist_file(".*[/\\\\]apr_errno.h")
+        .allowlist_file(".*[/\\\\]apr_pools.h")
+        .allowlist_file(".*[/\\\\]apr_tables.h")
+        .allowlist_file(".*[/\\\\]apr_hash.h")
+        .allowlist_file(".*[/\\\\]apr_file_info.h")
+        .allowlist_file(".*[/\\\\]apr_file_io.h")
+        .allowlist_file(".*[/\\\\]apr_getopt.h")
+        .allowlist_file(".*[/\\\\]apr_uri.h")
+        .allowlist_file(".*[/\\\\]apr_time.h")
+        .allowlist_file(".*[/\\\\]apr_date.h")
+        .allowlist_file(".*[/\\\\]apr_strings.h")
+        .allowlist_file(".*[/\\\\]apr_version.h")
+        .allowlist_file(".*[/\\\\]apu_version.h")
+        .allowlist_file(".*[/\\\\]apr_thread_proc.h")
+        .allowlist_file(".*[/\\\\]apr_thread_mutex.h")
+        .allowlist_file(".*[/\\\\]apr_thread_cond.h")
+        .allowlist_file(".*[/\\\\]apr_dso.h")
+        .allowlist_file(".*[/\\\\]apr_env.h")
+        .allowlist_file(".*[/\\\\]apr_network_io.h")
+        .allowlist_file(".*[/\\\\]apr_mmap.h")
+        .allowlist_file(".*[/\\\\]apr_user.h")
+        .allowlist_file(".*[/\\\\]apr_md5.h")
+        .allowlist_file(".*[/\\\\]apr_sha1.h")
+        .allowlist_file(".*[/\\\\]apr_base64.h")
+        .allowlist_file(".*[/\\\\]apr_uuid.h")
+        .allowlist_file(".*[/\\\\]apr_strmatch.h")
+        .allowlist_file(".*[/\\\\]apr_xlate.h")
+        .allowlist_file(".*[/\\\\]apr_xml.h")
+        .allowlist_file(".*[/\\\\]apr_crypto.h")
+        .allowlist_file(".*[/\\\\]apr_queue.h")
+        .allowlist_file(".*[/\\\\]apr_portable.h")
+        .allowlist_file(".*[/\\\\]apr_support.h")
         // Explicitly allowlist fundamental APR types that may be defined via
         // typedef chains through system headers. On some platforms (e.g. EL9),
         // bindgen may attribute these to system headers rather than apr.h,
@@ -151,4 +151,20 @@ fn main() {
             .collect::<Vec<_>>()
             .as_slice(),
     );
+
+    // Check if APU_HAVE_CRYPTO is defined and non-zero in apu.h
+    let apu_h = std::fs::read_to_string(apr_util_path.join("apu.h")).expect("Failed to read apu.h");
+    let has_crypto = apu_h.lines().any(|line| {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("#define") {
+            let rest = rest.trim();
+            if let Some(value) = rest.strip_prefix("APU_HAVE_CRYPTO") {
+                return value.trim() != "0";
+            }
+        }
+        false
+    });
+    if has_crypto {
+        println!("cargo:rustc-cfg=apu_have_crypto");
+    }
 }

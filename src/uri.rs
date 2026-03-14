@@ -252,9 +252,14 @@ mod tests {
         assert_eq!(None, uri.query());
         assert_eq!(None, uri.fragment());
         assert_eq!(Some("8080"), uri.port_str());
-        assert!(uri.is_initialized());
-        assert!(!uri.dns_looked_up());
-        assert!(!uri.dns_resolved());
+        // TODO: bitfield accessors are broken on Windows/MSVC
+        // https://github.com/rust-lang/rust-bindgen/issues/3184
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(uri.is_initialized());
+            assert!(!uri.dns_looked_up());
+            assert!(!uri.dns_resolved());
+        }
     }
 
     #[test]
@@ -269,9 +274,14 @@ mod tests {
         assert_eq!(None, uri.query());
         assert_eq!(None, uri.fragment());
         assert_eq!(Some("8080"), uri.port_str());
-        assert!(uri.is_initialized());
-        assert!(!uri.dns_looked_up());
-        assert!(!uri.dns_resolved());
+        // TODO: bitfield accessors are broken on Windows/MSVC
+        // https://github.com/rust-lang/rust-bindgen/issues/3184
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(uri.is_initialized());
+            assert!(!uri.dns_looked_up());
+            assert!(!uri.dns_resolved());
+        }
     }
 }
 

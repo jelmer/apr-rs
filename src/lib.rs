@@ -94,6 +94,7 @@ pub mod base64;
 /// Callback function types and utilities
 pub mod callbacks;
 /// Cryptographic operations (encryption, decryption)
+#[cfg(apu_have_crypto)]
 pub mod crypto;
 /// Date parsing and formatting utilities
 pub mod date;

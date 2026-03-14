@@ -150,7 +150,8 @@ mod tests {
 
         // Create a temporary file with known content
         let test_content = b"Hello, APR mmap test!";
-        let temp_path = "/tmp/apr_mmap_test.txt";
+        let temp_path = std::env::temp_dir().join("apr_mmap_test.txt");
+        let temp_path = temp_path.to_str().unwrap();
 
         {
             let mut temp_file = std::fs::File::create(temp_path).unwrap();
@@ -193,7 +194,8 @@ mod tests {
 
         // Create a temporary file
         let test_content = b"Duplicate test data";
-        let temp_path = "/tmp/apr_mmap_dup_test.txt";
+        let temp_path = std::env::temp_dir().join("apr_mmap_dup_test.txt");
+        let temp_path = temp_path.to_str().unwrap();
 
         {
             let mut temp_file = std::fs::File::create(temp_path).unwrap();
@@ -245,7 +247,8 @@ mod tests {
         let pool = Pool::new();
 
         // Create file with minimal content
-        let temp_path = "/tmp/apr_mmap_empty_test.txt";
+        let temp_path = std::env::temp_dir().join("apr_mmap_empty_test.txt");
+        let temp_path = temp_path.to_str().unwrap();
         std::fs::write(temp_path, "x").unwrap();
 
         let file =

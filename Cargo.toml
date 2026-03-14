@@ -23,4 +23,7 @@ std = []
 url = ["dep:url", "std"]
 pool-debug = ["apr-sys/pool-debug"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(apu_have_crypto)'] }
+
 [build-dependencies]

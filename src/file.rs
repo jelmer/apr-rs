@@ -458,8 +458,9 @@ mod tests {
     fn test_temp_file() {
         let pool = Pool::new();
 
+        let template = std::env::temp_dir().join("apr_temp_XXXXXX");
         let mut temp_file = File::temp_file(
-            "/tmp/apr_temp_XXXXXX",
+            template.to_str().unwrap(),
             OpenFlags::combine(&[OpenFlags::READ, OpenFlags::WRITE]),
             &pool,
         )

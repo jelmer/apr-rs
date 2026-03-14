@@ -14,7 +14,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
 
@@ -32,6 +32,20 @@ jobs:
         echo "PKG_CONFIG_PATH=/opt/homebrew/opt/apr-util/lib/pkgconfig:/opt/homebrew/opt/apr/lib/pkgconfig" >> $GITHUB_ENV
         pkg-config --list-all
       if: "matrix.os == 'macos-latest'"
+    - name: Install apr (Windows)
+      run: |
+        vcpkg install apr:x64-windows apr-util:x64-windows
+        $prefix = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
+        echo "SYSTEM_DEPS_APR_1_NO_PKG_CONFIG=1" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_1_INCLUDE=$prefix\include" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_1_SEARCH_NATIVE=$prefix\lib" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_1_LIB=libapr-1" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_UTIL_1_NO_PKG_CONFIG=1" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_UTIL_1_INCLUDE=$prefix\include" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_UTIL_1_SEARCH_NATIVE=$prefix\lib" >> $env:GITHUB_ENV
+        echo "SYSTEM_DEPS_APR_UTIL_1_LIB=libaprutil-1" >> $env:GITHUB_ENV
+        echo "$prefix\bin" >> $env:GITHUB_PATH
+      if: "matrix.os == 'windows-latest'"
     - name: Build
       run: cargo build --verbose
     - name: Run tests
