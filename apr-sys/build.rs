@@ -7,11 +7,12 @@ fn create_bindings(
     apr_include_paths: &[&std::path::Path],
 ) {
     // Generate bindings using bindgen
-    let mut builder = bindgen::Builder::default().use_core();
-    // check if the pool-debug feature is present
-    if std::env::var("CARGO_FEATURE_POOL_DEBUG").is_ok() {
-        builder = builder.clang_arg("-DAPR_POOL_DEBUG");
-    }
+    // Note: we intentionally do NOT pass -DAPR_POOL_DEBUG to clang here,
+    // as that would change struct layouts in the bindings to include debug
+    // fields, causing ABI mismatch with APR libraries not compiled with
+    // APR_POOL_DEBUG. The pool-debug functions are declared manually in
+    // apr-sys/src/lib.rs instead.
+    let builder = bindgen::Builder::default().use_core();
     let bindings = builder
         .header(apr_path.join("apr.h").to_str().unwrap())
         .header(apr_path.join("apr_allocator.h").to_str().unwrap())
