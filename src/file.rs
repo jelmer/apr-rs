@@ -460,12 +460,11 @@ mod tests {
 
         let template = std::env::temp_dir().join("apr_temp_XXXXXX");
         let template = template.to_str().unwrap().replace('\\', "/");
-        let mut temp_file = File::temp_file(
-            &template,
-            OpenFlags::combine(&[OpenFlags::READ, OpenFlags::WRITE]),
-            &pool,
-        )
-        .expect("Failed to create temp file");
+        // Pass flags 0 to use APR defaults (CREATE|READ|WRITE|EXCL|DELONCLOSE).
+        // Non-zero flags without CREATE fail on Windows where gettemp() passes
+        // them directly to apr_file_open.
+        let mut temp_file =
+            File::temp_file(&template, OpenFlags(0), &pool).expect("Failed to create temp file");
 
         temp_file
             .write_all(b"Temporary data")
