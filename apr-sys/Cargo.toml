@@ -1,6 +1,6 @@
 [package]
 name = "apr-sys"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@apache.org>"]
 repository = "https://github.com/jelmer/apr-rs.git"
