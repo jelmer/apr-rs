@@ -151,4 +151,20 @@ fn main() {
             .collect::<Vec<_>>()
             .as_slice(),
     );
+
+    // Check if APU_HAVE_CRYPTO is defined and non-zero in apu.h
+    let apu_h = std::fs::read_to_string(apr_util_path.join("apu.h")).expect("Failed to read apu.h");
+    let has_crypto = apu_h.lines().any(|line| {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("#define") {
+            let rest = rest.trim();
+            if let Some(value) = rest.strip_prefix("APU_HAVE_CRYPTO") {
+                return value.trim() != "0";
+            }
+        }
+        false
+    });
+    if has_crypto {
+        println!("cargo:rustc-cfg=apu_have_crypto");
+    }
 }
