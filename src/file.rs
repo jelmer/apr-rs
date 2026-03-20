@@ -421,13 +421,14 @@ mod tests {
     fn test_file_open_write_read() {
         let pool = Pool::new();
 
-        // Create a unique temporary file path in the current directory
-        let temp_path = format!("./target/apr_test_file_{}", std::process::id());
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let temp_path = dir.path().join("apr_test_file");
+        let temp_path = temp_path.to_str().unwrap();
 
         // Write to file
         {
             let mut file = File::open(
-                &temp_path,
+                temp_path,
                 OpenFlags::combine(&[OpenFlags::WRITE, OpenFlags::CREATE, OpenFlags::TRUNCATE]),
                 apr_sys::APR_FPROT_OS_DEFAULT as i32,
                 &pool,
@@ -441,7 +442,7 @@ mod tests {
 
         // Read from file
         {
-            let mut file = File::open(&temp_path, OpenFlags::READ, 0, &pool)
+            let mut file = File::open(temp_path, OpenFlags::READ, 0, &pool)
                 .expect("Failed to open file for reading");
 
             let mut buffer = String::new();
@@ -449,9 +450,6 @@ mod tests {
                 .expect("Failed to read from file");
             assert_eq!(buffer, "Hello, APR!");
         }
-
-        // Clean up
-        let _ = std::fs::remove_file(temp_path);
     }
 
     #[test]

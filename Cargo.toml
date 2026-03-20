@@ -26,4 +26,7 @@ pool-debug = ["apr-sys/pool-debug"]
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(apu_have_crypto)'] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [build-dependencies]
