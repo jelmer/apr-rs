@@ -14,7 +14,7 @@ documentation = "https://docs.rs/apr"
 
 [dependencies]
 apr-sys = { version = "0.2.1", path = "apr-sys" }
-ctor = "0.6"
+ctor = "0.8"
 url = { version = "2", optional = true }
 
 [features]
