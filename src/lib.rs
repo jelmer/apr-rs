@@ -242,7 +242,7 @@ macro_rules! apr_hash {
 // - https://github.com/mmastrac/rust-ctor/issues/8
 // - https://github.com/rust-lang/cargo/issues/5438
 // - https://dev.apr.apache.narkive.com/cHRvpf93/thread-safety-of-apr-initialize
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn init() {
     unsafe {
         apr_sys::apr_initialize();
