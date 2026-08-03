@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "apr"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "apr-sys",
  "ctor",
@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "apr-sys"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bindgen",
  "system-deps",

@@ -41,7 +41,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-apr = "0.3"
+apr = "0.4"
 ```
 
 ### Prerequisites
