@@ -350,6 +350,8 @@ pub enum PoolHandle<'pool> {
     /// A borrowed pool that will NOT be destroyed when dropped.
     /// The pool is owned by the caller (typically a C library).
     Borrowed(ManuallyDrop<Pool<'pool>>),
+    /// A reference-counted shared pool that will be destroyed when the last reference is dropped.
+    Shared(SharedPool<'pool>),
 }
 
 impl<'pool> PoolHandle<'pool> {
@@ -369,6 +371,24 @@ impl<'pool> PoolHandle<'pool> {
     /// ```
     pub fn owned(pool: Pool<'pool>) -> Self {
         PoolHandle::Owned(pool)
+    }
+
+    /// Create a handle to a shared pool.
+    ///
+    /// The pool will be destroyed when the last reference is dropped.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::SharedPool;
+    ///
+    /// let pool = SharedPool::new();
+    /// let handle = PoolHandle::shared(pool);
+    /// // handle can be cloned, and the pool will be destroyed when all handles are dropped
+    /// ```
+    pub fn shared(pool: SharedPool<'pool>) -> Self {
+        PoolHandle::Shared(pool)
     }
 
     /// Create a handle to a borrowed pool from a raw pointer.
@@ -398,6 +418,7 @@ impl<'pool> PoolHandle<'pool> {
         match self {
             PoolHandle::Owned(pool) => pool.as_ptr(),
             PoolHandle::Borrowed(pool) => pool.as_ptr(),
+            PoolHandle::Shared(pool) => pool.as_ptr(),
         }
     }
 
@@ -406,6 +427,7 @@ impl<'pool> PoolHandle<'pool> {
         match self {
             PoolHandle::Owned(pool) => pool.as_mut_ptr(),
             PoolHandle::Borrowed(pool) => pool.as_mut_ptr(),
+            PoolHandle::Shared(pool) => pool.as_mut_ptr(),
         }
     }
 
@@ -467,6 +489,24 @@ impl<'pool> PoolHandle<'pool> {
     pub fn is_borrowed(&self) -> bool {
         matches!(self, PoolHandle::Borrowed(_))
     }
+
+    /// Returns true if this handle contains a shared pool.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::SharedPool;
+    ///
+    /// let pool = SharedPool::new();
+    /// let handle = PoolHandle::shared(pool);
+    /// assert!(handle.is_shared());
+    /// assert!(!handle.is_owned());
+    /// assert!(!handle.is_borrowed());
+    /// ```
+    pub fn is_shared(&self) -> bool {
+        matches!(self, PoolHandle::Shared(_))
+    }
 }
 
 impl Drop for PoolHandle<'_> {
@@ -493,6 +533,23 @@ impl<'pool> From<Pool<'pool>> for PoolHandle<'pool> {
     }
 }
 
+impl<'pool> From<SharedPool<'pool>> for PoolHandle<'pool> {
+    /// Convert a shared pool into a pool handle.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use apr::PoolHandle;
+    /// use apr::SharedPool;
+    ///
+    /// let pool = SharedPool::new();
+    /// let handle: PoolHandle = pool.into();
+    /// ```
+    fn from(pool: SharedPool<'pool>) -> Self {
+        PoolHandle::Shared(pool)
+    }
+}
+
 impl<'pool> Deref for PoolHandle<'pool> {
     type Target = Pool<'pool>;
 
@@ -515,6 +572,7 @@ impl<'pool> Deref for PoolHandle<'pool> {
         match self {
             PoolHandle::Owned(pool) => pool,
             PoolHandle::Borrowed(pool) => pool,
+            PoolHandle::Shared(pool) => pool,
         }
     }
 }
@@ -525,6 +583,7 @@ impl<'pool> DerefMut for PoolHandle<'pool> {
         match self {
             PoolHandle::Owned(pool) => pool,
             PoolHandle::Borrowed(pool) => pool,
+            PoolHandle::Shared(pool) => unsafe { &mut *(pool.as_mut_ptr() as *mut Pool<'pool>) },
         }
     }
 }
@@ -843,6 +902,59 @@ mod tests {
     }
 
     #[test]
+    fn test_pool_handle_shared() {
+        // Create a shared pool handle
+        let shared_pool = SharedPool::new();
+        let handle = PoolHandle::shared(shared_pool);
+
+        // Verify it's shared
+        assert!(handle.is_shared());
+        assert!(!handle.is_owned());
+        assert!(!handle.is_borrowed());
+
+        // Test pointer access
+        assert!(!handle.as_ptr().is_null());
+        assert!(!handle.as_mut_ptr().is_null());
+
+        // Test that we can use Pool methods through Deref
+        handle.tag("shared-pool");
+    }
+
+    #[test]
+    fn test_pool_handle_shared_from_conversion() {
+        // Test From<SharedPool> trait
+        let shared_pool = SharedPool::new();
+        let handle: PoolHandle = shared_pool.into();
+
+        assert!(handle.is_shared());
+        assert!(!handle.is_owned());
+        assert!(!handle.is_borrowed());
+    }
+
+    #[test]
+    fn test_pool_handle_shared_deref() {
+        // Test that we can call Pool methods directly on a shared PoolHandle
+        let shared_pool = SharedPool::new();
+        let handle = PoolHandle::shared(shared_pool);
+
+        // These should all work through Deref/DerefMut
+        handle.tag("test-shared-deref");
+        let _subpool = handle.subpool();
+        let _parent = handle.parent();
+    }
+
+    #[test]
+    fn test_pool_handle_shared_subpool() {
+        // Test subpool creation from a shared handle
+        let shared_pool = SharedPool::new();
+        let handle = PoolHandle::shared(shared_pool);
+        let subpool = handle.subpool();
+
+        // Verify the subpool is valid
+        subpool.tag("subpool-from-shared");
+    }
+
+    #[test]
     fn test_shared_pool_basic() {
         // Create a new shared pool
         let pool = SharedPool::new();
@@ -931,7 +1043,7 @@ mod tests {
 
         // Shared pool is the ancestor of the subpool
         assert!(shared.is_ancestor(&subpool));
-        assert!(!subpool.is_ancestor(&*shared));
+        assert!(!subpool.is_ancestor(&shared));
     }
 
     #[test]
